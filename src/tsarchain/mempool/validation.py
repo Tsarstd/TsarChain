@@ -84,13 +84,15 @@ class TxMempoolValidator:
             
             else:
                 self.last_error_reason = reason or "native_mempool_reject"
+                tx_txid = tx.txid
                 log.warning(
                     "[validate_transaction] Native reject txid=%s reason=%s",
-                    getattr(tx, "txid", None),
+                    tx_txid,
                     self.last_error_reason,
                 )
         except Exception:
-            log.exception("[validate_transaction] Native validation error for tx %s", getattr(tx, "txid", None))
+            tx_txid = tx.txid
+            log.exception("[validate_transaction] Native validation error for tx %s", tx_txid)
             self.last_error_reason = "native_mempool_failed"
             return False
 
@@ -108,14 +110,18 @@ class TxMempoolValidator:
 
 
     def _check_mempool_payout_sanity(self, tx: Tx) -> bool:
-        reg = getattr(self.utxo, "_graffiti_registry", None) or GraffitiRegistry()
+        reg = self.utxo._graffiti_registry
+        if reg is None:
+            reg = GraffitiRegistry()
         paymap: dict[str, int] = {}
-        for out in getattr(tx, "outputs", []) or []:
-            addr = self._script_to_address(getattr(out, "script_pubkey", None))
+        outputs = tx.outputs or []
+        for out in outputs:
+            spk = out.script_pubkey
+            addr = self._script_to_address(spk)
             if not addr:
                 continue
             
-            amt = int(getattr(out, "amount", 0) or 0)
+            amt = int(out.amount or 0)
             if amt <= 0:
                 continue
             
@@ -162,20 +168,22 @@ class TxMempoolValidator:
         pool_balance = int(stats.get("pool_balance", 0))
 
         recs = payout_meta.get("recipients") or []
-        if not isinstance(recs, list) or not recs:
+        if type(recs) is not list or not recs:
             self.last_error_reason = "payout_no_recipients"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
 
         paymap: dict[str, int] = {}
-        for out in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(out, "amount", 0) or 0)
+        outputs = tx.outputs or []
+        for out in outputs:
+            amt = int(out.amount or 0)
             if amt <= 0:
                 continue
             
-            spk_bytes = get_utxo_script_bytes({"tx_out": {"script_pubkey": getattr(out, "script_pubkey", None)}})
+            spk = out.script_pubkey
+            spk_bytes = get_utxo_script_bytes({"tx_out": {"script_pubkey": spk}})
             if is_p2wpkh(spk_bytes) or is_p2wsh(spk_bytes):
-                addr = self._script_to_address(getattr(out, "script_pubkey", None))
+                addr = self._script_to_address(spk)
                 if addr:
                     paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
 
@@ -204,9 +212,11 @@ class TxMempoolValidator:
     def _validate_payout_inputs(self, tx: Tx, art_id: str, utxo_set: dict[str, Any]) -> bool:
         total_in = 0
         pool_script_hash = GRAFFITI.hash_pool_redeem_script(art_id)
-        for txin in getattr(tx, "inputs", []) or []:
+        inputs = tx.inputs or []
+        for txin in inputs:
             prev_txid_hex = self._txin_prev_txid(txin)
-            vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
+            v_val = txin.vout
+            vout = int(v_val if v_val is not None else 0)
             utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, vout)
             if not utxo_entry:
                 self.last_error_reason = "missing_prevout"
@@ -227,7 +237,10 @@ class TxMempoolValidator:
                 log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
                 return False
 
-        total_out = sum(int(getattr(o, "amount", 0) or 0) for o in getattr(tx, "outputs", []) or [])
+        outputs = tx.outputs or []
+        total_out = 0
+        for o in outputs:
+            total_out += int(o.amount or 0)
         if total_out > total_in:
             self.last_error_reason = "payout_fee_negative"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
@@ -239,9 +252,11 @@ class TxMempoolValidator:
 
     def _has_exceeded_mempool_post_limit(self, max_limit: int) -> bool:
         current_posts = 0
-        for existing in getattr(self, "_pool", {}).values():
-            for out in getattr(existing, "outputs", []) or []:
-                spk2 = getattr(out, "script_pubkey", None)
+        pool_values = self._pool.values()
+        for existing in pool_values:
+            outputs = existing.outputs or []
+            for out in outputs:
+                spk2 = out.script_pubkey
                 meta2 = GRAFFITI.parse_from_script(spk2) if spk2 is not None else None
                 if meta2 and str(meta2.get("event", "")).upper() == "POST":
                     current_posts += 1
@@ -276,7 +291,7 @@ class TxMempoolValidator:
                 return False
             
         recs = meta.get("recipients") or []
-        if not isinstance(recs, list) or not recs:
+        if type(recs) is not list or not recs:
             self.last_error_reason = "payout_no_recipients"
             return False
         
@@ -301,18 +316,21 @@ class TxMempoolValidator:
 
 
     def _validate_tx_basic_guards(self, tx: Tx) -> bool:
-        if getattr(tx, "is_coinbase", False):
+        if tx.is_coinbase:
             return False
 
+        tx_txid = tx.txid
         try:
             weight, vsize, _base_size, _total_size = compute_tx_weight_vsize(tx)
         except Exception:
-            log.exception("[validate_transaction] weight_calc_failed txid=%s", getattr(tx, "txid", None))
+            log.exception("[validate_transaction] weight_calc_failed txid=%s", tx_txid)
             self.last_error_reason = "tx_weight_calc_failed"
             return False
 
-        vin = len(getattr(tx, "inputs", []) or [])
-        vout = len(getattr(tx, "outputs", []) or [])
+        inputs = tx.inputs or []
+        outputs = tx.outputs or []
+        vin = len(inputs)
+        vout = len(outputs)
         if vsize > int(CFG.MAX_TX_VSIZE):
             self.last_error_reason = "tx_vsize_exceeds_limit"
             return False
@@ -332,15 +350,17 @@ class TxMempoolValidator:
             self.last_error_reason = "tx_outputs_exceed_limit"
             return False
 
-        for tx_out in getattr(tx, "outputs", []) or []:
-            if not self._validate_graffiti_output(getattr(tx_out, "script_pubkey", None)):
+        for tx_out in outputs:
+            spk = tx_out.script_pubkey
+            if not self._validate_graffiti_output(spk):
                 return False
         return True
 
 
     def _find_payout_meta(self, tx: Tx) -> dict[str, Any] | None:
-        for tx_out in getattr(tx, "outputs", []) or []:
-            spk = getattr(tx_out, "script_pubkey", None)
+        outputs = tx.outputs or []
+        for tx_out in outputs:
+            spk = tx_out.script_pubkey
             meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
             if meta and str(meta.get("event", "")).upper() == "PAYOUT":
                 return meta
@@ -348,7 +368,9 @@ class TxMempoolValidator:
 
 
     def _validate_payout_tx(self, tx: Tx, payout_meta: dict[str, Any], utxo_set: dict[str, Any]) -> bool:
-        reg = getattr(self.utxo, "_graffiti_registry", None) or GraffitiRegistry()
+        reg = self.utxo._graffiti_registry
+        if reg is None:
+            reg = GraffitiRegistry()
         if not self._validate_payout_art_and_epoch(payout_meta, reg):
             return False
 
@@ -363,8 +385,9 @@ class TxMempoolValidator:
 
     def _enforce_mempool_post_limit(self, tx: Tx) -> bool:
         is_post = False
-        for tx_out in getattr(tx, "outputs", []) or []:
-            spk = getattr(tx_out, "script_pubkey", None)
+        outputs = tx.outputs or []
+        for tx_out in outputs:
+            spk = tx_out.script_pubkey
             meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
             if meta and str(meta.get("event", "")).upper() == "POST":
                 is_post = True
@@ -377,11 +400,10 @@ class TxMempoolValidator:
                     try:
                         pool_addr = GRAFFITI.derive_pool_address(art_id)
                         min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
-                        paid = sum(
-                            int(getattr(out, "amount", 0))
-                            for out in getattr(tx, "outputs", []) or []
-                            if (script_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
-                        )
+                        paid = 0
+                        for out in outputs:
+                            if out.address == pool_addr:
+                                paid += int(out.amount or 0)
                         if paid < min_fee:
                             self.last_error_reason = "graffiti_post_fee_insufficient"
                             log.warning("[_enforce_mempool_post_limit] POST rejected due to insufficient pool fee: paid=%s required=%s art_id=%s", paid, min_fee, art_id[:16])
@@ -398,8 +420,9 @@ class TxMempoolValidator:
 
 
     def _validate_payout_sanity(self, tx: Tx, paymap: dict[str, int], reg: GraffitiRegistry) -> bool:
-        for out in getattr(tx, "outputs", []) or []:
-            spk = getattr(out, "script_pubkey", None)
+        outputs = tx.outputs or []
+        for out in outputs:
+            spk = out.script_pubkey
             meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
             if meta and str(meta.get("event", "")).upper() == "PAYOUT":
                 if not self._validate_single_payout_sanity(meta, paymap, reg):
@@ -422,13 +445,10 @@ class TxMempoolValidator:
                 return snapshot[tk]
 
         bucket = snapshot.get(txid) or snapshot.get(txid_raw)
-        if isinstance(bucket, dict) and idx in bucket:
+        if type(bucket) is dict and idx in bucket:
             return bucket[idx]
 
-        try:
-            txid_bytes = bytes.fromhex(txid)
-        except ValueError:
-            txid_bytes = None
+        txid_bytes = bytes.fromhex(txid)
         if txid_bytes:
             tuple_b = (txid_bytes, idx)
             if tuple_b in snapshot:
@@ -437,28 +457,33 @@ class TxMempoolValidator:
 
 
     def _get_utxo_amount(self, utxo_data):
-        if isinstance(utxo_data, dict):
+        if type(utxo_data) is dict:
             if "tx_out" in utxo_data:
                 txo = utxo_data["tx_out"]
-                if isinstance(txo, dict) and "amount" in txo:
+                if type(txo) is dict and "amount" in txo:
                     return int(txo.get("amount", 0))
-                amt = getattr(txo, "amount", None)
+
+                amt = txo.amount
                 if amt is not None:
                     return int(amt)
             if "amount" in utxo_data:
                 return int(utxo_data["amount"])
         else:
-            amt = getattr(utxo_data, "amount", None)
+            amt = utxo_data.amount
             if amt is not None:
                 return int(amt)
         raise ValueError(f"Unknown UTXO format: {utxo_data}")
 
 
     def _txin_prev_txid(self, tx_in) -> str | None:
-        txid_val = getattr(tx_in, "txid", None) or getattr(tx_in, "prev_tx", None)
+        txid_val = tx_in.txid
+
+        if txid_val is None:
+            txid_val = tx_in.prev_tx
+
         if txid_val is None:
             return None
-        if isinstance(txid_val, (bytes, bytearray)):
+        if type(txid_val) in (bytes, bytearray):
             return txid_val.hex().lower()
         return str(txid_val).lower()
 
@@ -471,12 +496,12 @@ class TxMempoolValidator:
         txid_raw = str(prev_txid_hex)
         txid = txid_raw.lower()
 
-        if isinstance(snapshot, dict):
+        if type(snapshot) is dict:
             res = self._lookup_in_snapshot_dict(snapshot, txid, txid_raw, idx)
             if res is not None:
                 return res
 
-        lookup_method = getattr(self.utxo, "lookup_entry", None)
+        lookup_method = self.utxo.lookup_entry
         if callable(lookup_method):
             return lookup_method(txid, idx)
         return None
@@ -484,10 +509,10 @@ class TxMempoolValidator:
 
     def _utxo_snapshot_to_items(self, snapshot) -> list[tuple]:
         items = []
-        if not isinstance(snapshot, dict):
+        if type(snapshot) is not dict:
             return items
         for key, entry in snapshot.items():
-            if isinstance(key, bytes):
+            if type(key) in (bytes, bytearray):
                 key_str = key.decode("utf-8")
             else:
                 key_str = str(key)
@@ -504,17 +529,7 @@ class TxMempoolValidator:
 
     # Graffiti OP_RETURN guard (size/comment/min fee)
     def _validate_graffiti_output(self, spk_obj) -> bool:
-        raw = None
-        ser = getattr(spk_obj, "serialize", None)
-        if callable(ser):
-            raw = ser()
-        elif isinstance(spk_obj, (bytes, bytearray)):
-            raw = bytes(spk_obj)
-        elif isinstance(spk_obj, str):
-            try:
-                raw = bytes.fromhex(spk_obj)
-            except ValueError:
-                return True
+        raw = spk_obj.serialize()
         if not raw:
             return True
         data = last_pushdata(raw)

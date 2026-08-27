@@ -97,30 +97,35 @@ class UTXOBalanceMixin:
     def _script_hex_from_tx_out(self, tx_out) -> str | None:
         if tx_out is None:
             return None
-        if isinstance(tx_out, dict):
+        if type(tx_out) is dict:
             spk = tx_out.get("script_pubkey")
         else:
-            spk = getattr(tx_out, "script_pubkey", None)
-            if spk is None:
-                serialize = getattr(tx_out, "serialize", None)
-                if callable(serialize):
-                    return serialize().hex().lower()
+            try:
+                spk = tx_out.script_pubkey
+            except AttributeError:
+                try:
+                    return tx_out.serialize().hex().lower()
+                except (AttributeError, TypeError):
+                    spk = None
         if spk is None:
             return None
-        serialize = getattr(spk, "serialize", None)
-        if callable(serialize):
-            return serialize().hex().lower()
-        if isinstance(spk, (bytes, bytearray)):
+        try:
+            return spk.serialize().hex().lower()
+        except (AttributeError, TypeError):
+            pass
+        if type(spk) in (bytes, bytearray):
             return bytes(spk).hex().lower()
-        if isinstance(spk, str):
+        if type(spk) is str:
             return spk.lower()
         return None
 
 
     def _amount_from_tx_out(self, tx_out) -> int:
-        if isinstance(tx_out, dict):
+        if type(tx_out) is dict:
             return int(tx_out.get("amount", 0) or 0)
-        return int(getattr(tx_out, "amount", 0) or 0)
+
+        amt = tx_out.amount
+        return int(amt or 0)
 
 
     def _normalize_target_spk_hex(self, x: str) -> str:

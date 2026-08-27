@@ -192,8 +192,9 @@ class JsonFormatter(logging.Formatter):
             "proc": record.processName if show_proc else proc_placeholder,
             "msg": record.getMessage(),
         }
+        rdict = record.__dict__
         for k in ("height", "block", "peer"):
-            v = getattr(record, k, None)
+            v = rdict.get(k)
             if v not in (None, "-"):
                 d[k] = v
         if record.exc_info:
@@ -204,9 +205,10 @@ class JsonFormatter(logging.Formatter):
 class SafeFormatter(logging.Formatter):
     """Plain-text formatter ensuring contextual tokens have safe default values."""
     def format(self, record: logging.LogRecord) -> str:
-        if getattr(record, "height", None) is None: record.height = "-"
-        if getattr(record, "block", None) is None:  record.block  = "-"
-        if getattr(record, "peer", None) is None:   record.peer   = "-"
+        rdict = record.__dict__
+        if "height" not in rdict or record.height is None: record.height = "-"
+        if "block" not in rdict or record.block is None:  record.block  = "-"
+        if "peer" not in rdict or record.peer is None:   record.peer   = "-"
         return super().format(record)
 
 
@@ -217,8 +219,11 @@ class ContextAdapter(logging.LoggerAdapter):
     """
     def process(self, msg: Any, kwargs: Any) -> tuple[Any, Any]:
         extra = dict(self.extra) if self.extra else {}
-        if "extra" in kwargs and isinstance(kwargs["extra"], dict):
-            extra.update(kwargs["extra"])
+        if "extra" in kwargs:
+            try:
+                extra.update(kwargs["extra"])
+            except (TypeError, ValueError):
+                pass
         extra.setdefault("height", "-")
         extra.setdefault("block", "-")
         extra.setdefault("peer", "-")
@@ -231,6 +236,24 @@ class ContextAdapter(logging.LoggerAdapter):
     def trace(self, msg: Any, *args: Any, **kwargs: Any) -> None:
         if self.logger.isEnabledFor(TRACE):
             self.log(TRACE, msg, *args, **kwargs)
+
+
+class SafeRotatingFileHandler(RotatingFileHandler):
+    """Windows-safe rotating file handler that gracefully handles file locks during rollover."""
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except (PermissionError, OSError):
+            if self.stream:
+                try:
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
+            try:
+                open(self.baseFilename, "w", encoding=self.encoding or "utf-8").close()
+            except Exception:
+                pass
 
 
 # =========================
@@ -280,7 +303,7 @@ def setup_logging(
     if log_file:
         log_path = Path(log_file)
         _ensure_log_file(log_path)
-        fh = RotatingFileHandler(
+        fh = SafeRotatingFileHandler(
             log_path,
             maxBytes=int(rotate_max_bytes),
             backupCount=int(backup_count),
@@ -312,12 +335,14 @@ def setup_logging(
 
     # Level normalization
     lvl = level
-    if isinstance(lvl, str):
+    try:
         lvl_up = lvl.upper()
         if lvl_up == "TRACE":
             lvl = TRACE
         else:
             lvl = logging._nameToLevel.get(lvl_up, logging.INFO)
+    except AttributeError:
+        pass
 
     logging.basicConfig(level=lvl, handlers=handlers, force=force)
     return logging.getLogger("tsarchain")

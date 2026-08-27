@@ -12,7 +12,10 @@ log = get_ctx_logger("tsarchain.wallet.ui_utils")
 def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
     win.update_idletasks()
     if parent is None:
-        parent = getattr(win, "master", None)
+        try:
+            parent = win.master
+        except AttributeError:
+            parent = None
 
     px = py = 0
     pw = win.winfo_screenwidth()
@@ -39,11 +42,9 @@ def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
     win.geometry(f"+{x}+{y}")
 
 def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> None:
-    if isinstance(ms, str):
-        kind = ms
-        ms = 1800
     ms = int(ms)
-    toasts = getattr(app_instance, "_toasts", None)
+    toasts = app_instance._toasts
+
     if toasts is None:
         toasts = []
         app_instance._toasts = toasts
@@ -54,14 +55,17 @@ def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> N
     tw.attributes("-topmost", True)
     tw.attributes("-alpha", 0.96)
 
-    theme_set = getattr(app_instance, "theme_set", None)
-    palette = getattr(theme_set, "palette", None) if theme_set else None
+    theme_set = app_instance.theme_set
+    palette = theme_set.palette if theme_set else None
+
     warn_color = palette.warning if palette else "#f5a524"
     error_color = palette.danger if palette else "#f1633f"
-    info_color = getattr(app_instance, "accent", "#ff6b00")
+    info_color = app_instance.accent
+
     border = {"info": info_color, "warn": warn_color, "error": error_color}.get(kind, info_color)
-    bg = getattr(app_instance, "panel_bg", "#161a1f")
-    fg = getattr(app_instance, "fg", "#f2f5f7")
+    bg = app_instance.panel_bg
+    fg = app_instance.fg
+
     w, h = 320, 52
     rx = app_instance.root.winfo_rootx(); ry = app_instance.root.winfo_rooty()
     rw = app_instance.root.winfo_width();  rh = app_instance.root.winfo_height()
@@ -91,7 +95,7 @@ def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> N
 
 def enable_treeview_hover(app_instance, tree, hover_bg: str | None = None) -> None:
     if hover_bg is None:
-        bg = (getattr(app_instance, "bg", "#0f1115") or "").lower()
+        bg = str(app_instance.bg or "#0f1115").lower()
         hover_bg = "#1e2630" if int(bg.replace("#", "")[:2], 16) < 0x88 else "#e9eef7"
 
     tree.tag_configure("HOVER", background=hover_bg)

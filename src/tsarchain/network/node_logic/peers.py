@@ -18,12 +18,12 @@ if TYPE_CHECKING:
 def normalize_peer(_, peer: Any) -> Optional[Tuple[str, int]]:
     if not peer:
         return None
-    if isinstance(peer, (tuple, list)) and len(peer) >= 2:
+    if type(peer) in (tuple, list) and len(peer) >= 2:
         host = str(peer[0])
         if host.startswith("::ffff:"):
             host = host[7:]
         return (host, int(peer[1]))
-    if isinstance(peer, str):
+    if type(peer) is str:
         peer = peer.strip()
         if peer.startswith("["):
             idx = peer.rfind("]:")

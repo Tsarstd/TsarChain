@@ -18,11 +18,11 @@ class NetworkHandlerProxy:
             self._in_getattr = False
 
     def __setattr__(self, name, value):
-        if name in ('network', '_in_getattr') or getattr(self, 'network', None) is self:
+        if name in ('network', '_in_getattr'):
             super().__setattr__(name, value)
+            return
+        net = self.__dict__.get('network')
+        if net is not None and net is not self and (name in net.__dict__ or name in net.__class__.__dict__):
+            net.__dict__[name] = value
         else:
-            net = getattr(self, 'network', None)
-            if net is not None and (name in getattr(net, '__dict__', {}) or getattr(net.__class__, name, None) is not None):
-                setattr(net, name, value)
-            else:
-                super().__setattr__(name, value)
+            super().__setattr__(name, value)

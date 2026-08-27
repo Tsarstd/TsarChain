@@ -33,10 +33,8 @@ def handle_miner_rpc(
     src_node_id: Optional[str] = None,
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
-    """Handle miner-to-miner RPC messages."""
-    ip = addr[0] if (isinstance(addr, tuple) and addr) else "0.0.0.0"
 
-
+    ip = str(addr[0]) if addr else "0.0.0.0"
     if mtype == "HELLO":
         if err := _check_miner_rl(self, ip, "hello", CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_BACKOFF_S):
             return err
@@ -69,17 +67,16 @@ def handle_miner_rpc(
         if err := _check_miner_rl(self, ip, "get_info", CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_BACKOFF_S):
             return err
         with self.broadcast.lock:
-            b_height = getattr(self.broadcast.blockchain, "height", 0)
-            b_blocks = len(getattr(self.broadcast.blockchain, "chain", []))
+            b_height = self.broadcast.blockchain.height
+            b_blocks = len(self.broadcast.blockchain.chain)
 
-        mempool_obj = getattr(self.broadcast, "mempool", None)
-        mp_count = len(getattr(mempool_obj, "_pool", {})) if mempool_obj else 0
-
-        utxodb_obj = getattr(self.broadcast, "utxodb", None)
-        utxo_count = len(getattr(utxodb_obj, "utxos", {})) if utxodb_obj else 0
+        mempool_obj = self.broadcast.mempool
+        mp_count = len(mempool_obj._pool)
+        utxodb_obj = self.broadcast.utxodb
+        utxo_count = len(utxodb_obj.utxos)
 
         with self.lock:
-            peers_count = sum(1 for _, p in self.peers if isinstance(p, int) and p > 0)
+            peers_count = sum(1 for _, p in self.peers if type(p) is int and p > 0)
 
         return {
             "type": "INFO",

@@ -90,8 +90,7 @@ class ArchivistCLI:
     # ---------- commands ----------
     def _print_files_table(self) -> None:
         idx = self.orchestrator.last_index or {}
-        files = idx.get("files") if isinstance(idx, dict) else {}
-        files = files if isinstance(files, dict) else {}
+        files = idx.get("files", {})
         table = format_files_table(files)
         Console().print(table)
 

@@ -39,18 +39,20 @@ class DifficultyManager:
             return 0
 
         def _to_int_ts(v):
-            if isinstance(v, (int, float)):
+            if type(v) in (int, float):
                 return int(v)
             return 0
 
         window = self.blockchain.chain[-k:] if len(self.blockchain.chain) >= k else self.blockchain.chain
-        times = sorted(_to_int_ts(getattr(b, "timestamp", 0)) for b in window)
+        times = sorted(_to_int_ts(b.timestamp) for b in window)
         return times[len(times) // 2]
 
 
     def _ts(self, b) -> int:
-        t = getattr(b, "timestamp", 0)
-        return int(t) if isinstance(t, (int, float)) else 0
+        if b is None:
+            return 0
+        t = b.timestamp
+        return int(t) if type(t) in (int, float) else 0
 
 
     def _expected_bits_on_prefix(self, prefix: "List[Block]", next_height: int) -> int:
@@ -58,7 +60,8 @@ class DifficultyManager:
         if next_height <= 0 or not prefix:
             return int(CFG.MAX_BITS)
         if len(prefix) < 2:
-            return int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+            b = prefix[-1].bits
+            return int(b if b is not None else CFG.MAX_BITS)
 
         n = min(int(CFG.LWMA_WINDOW), len(prefix))
         next_target = self._calculate_lwma_target(prefix, n, t)
@@ -89,8 +92,7 @@ class DifficultyManager:
             if st >  6 * t: st =  6 * t
             if st < 1:      st = 1
             sum_wst += i * st
-
-            bits_val = int(getattr(b, "bits", CFG.MAX_BITS))
+            bits_val = int(b.bits if b.bits is not None else CFG.MAX_BITS)
             tgt  = bits_to_target(bits_val)
             diff = max(1, int(target_to_difficulty(tgt)))
             sum_diff += diff
@@ -105,7 +107,10 @@ class DifficultyManager:
 
 
     def _apply_diff_clamp(self, prefix: "List[Block]", next_target: int, max_target: int) -> int:
-        prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+        try:
+            prev_bits = int(prefix[-1].bits if prefix[-1].bits is not None else CFG.MAX_BITS)
+        except AttributeError:
+            prev_bits = int(CFG.MAX_BITS)
         prev_target = bits_to_target(prev_bits)
         prev_target = prev_target or 1
         factor = Fraction(next_target, prev_target)
@@ -137,7 +142,10 @@ class DifficultyManager:
             lhs = Fraction(total_dt, count_dt)
             rhs = trigger * t
             if lhs > rhs:
-                prev_bits_val = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+                try:
+                    prev_bits_val = int(prefix[-1].bits if prefix[-1].bits is not None else CFG.MAX_BITS)
+                except AttributeError:
+                    prev_bits_val = int(CFG.MAX_BITS)
                 eased_target = Fraction(bits_to_target(prev_bits_val)) * Fraction(str(CFG.EDA_EASE_MULTIPLIER))
                 next_target = min(int(eased_target), int(max_target))
         return next_target
@@ -164,7 +172,7 @@ class DifficultyManager:
         for b in chain:
             w = self._work_from_bits(b.bits)
             cw += w
-            setattr(b, 'chainwork', cw)
+            b.chainwork = cw
         return cw
 
 

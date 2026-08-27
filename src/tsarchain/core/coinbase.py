@@ -62,6 +62,10 @@ class CoinbaseTx(Tx):
             outputs=[txout],
             is_coinbase=True,
             auto_compute_txid=True,
+            to_address=self.to_address,
+            block_id=self.block_id,
+            height=self.height,
+            reward=self.reward,
         )
 
     def to_dict(self, include_txid: bool = True):
@@ -77,7 +81,7 @@ class CoinbaseTx(Tx):
 
     @classmethod
     def from_dict(cls, data: dict):
-        if not isinstance(data, dict):
+        if type(data) is not dict:
             raise TypeError("CoinbaseTx.from_dict expects dict")
 
         to_addr = data.get("to_address") or data.get("address")
@@ -99,5 +103,5 @@ class CoinbaseTx(Tx):
         return obj
 
     def __repr__(self) -> str:
-        txid_hex = (self.txid.hex() if isinstance(self.txid, (bytes, bytearray)) else str(self.txid))[:12]
+        txid_hex = (self.txid.hex() if type(self.txid) in (bytes, bytearray) else str(self.txid))[:12]
         return f"<CoinbaseTx {txid_hex}... reward={self.reward} height={self.height}>"

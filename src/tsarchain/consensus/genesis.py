@@ -78,14 +78,13 @@ class GenesisManager:
         if not self.blockchain.chain:
             return
         g = self.blockchain.chain[0]
-        if getattr(g, "height", None) != 0:
+        if g.height != 0:
             raise ValueError("[Blockchain] Genesis must have height=0")
-        if getattr(g, "prev_block_hash", None) != CFG.ZERO_HASH:
+        if g.prev_block_hash != CFG.ZERO_HASH:
             raise ValueError("[Blockchain] Genesis prev_block_hash must be ZERO_HASH")
         if GENESIS_HASH is not None:
             try:
-                hash_fn = getattr(g, "hash", None)
-                g_hash = hash_fn() if callable(hash_fn) else bytes.fromhex(g.get("hash"))
+                g_hash = g.hash() if callable(g.hash) else bytes.fromhex(g.get("hash"))
             except Exception as e:
                 raise ValueError(f"[Blockchain] Cannot read genesis hash from chain: {e}")
             if g_hash != GENESIS_HASH:

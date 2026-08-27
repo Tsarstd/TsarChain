@@ -24,38 +24,40 @@ class MempoolPolicyMixin:
         return PrevoutRef.from_values(txid, vout)
 
     def _index_tx_prevouts(self, tx_obj: Tx) -> None:
-        if getattr(tx_obj, "is_coinbase", False):
+        if tx_obj.is_coinbase:
             return
         owner_txid = self._normalize_txid(tx_obj.txid)
         if not owner_txid:
             return
         prevouts: set[PrevoutRef] = set()
-        for txin in getattr(tx_obj, "inputs", []) or []:
-            key = self._prevout_key(
-                getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
-                getattr(txin, "vout", getattr(txin, "prev_index", None)),
-            )
+        inputs = tx_obj.inputs or []
+        for txin in inputs:
+            prev = txin.txid
+            vout = txin.vout
+            key = self._prevout_key(prev, vout)
             if key:
                 self._prevout_index[key] = owner_txid
                 prevouts.add(key)
         if prevouts:
-            tx_prevouts = getattr(self, "_tx_prevouts", None)
+            tx_prevouts = self._tx_prevouts
             if tx_prevouts is None:
                 self._tx_prevouts = {}
                 tx_prevouts = self._tx_prevouts
             tx_prevouts[owner_txid] = prevouts
 
     def _drop_tx_prevouts(self, tx_obj: Tx | None) -> None:
-        if not tx_obj or getattr(tx_obj, "is_coinbase", False):
+        if not tx_obj:
             return
-        txid_val = getattr(tx_obj, "txid", None)
+        if tx_obj.is_coinbase:
+            return
+        txid_val = tx_obj.txid
         if not txid_val:
             return
         owner_txid = self._normalize_txid(txid_val)
         if not owner_txid or not self._prevout_index:
             return
         
-        tx_prevouts_map = getattr(self, "_tx_prevouts", None)
+        tx_prevouts_map = self._tx_prevouts
         prevouts = tx_prevouts_map.pop(owner_txid, None) if tx_prevouts_map else None
         if prevouts:
             for key in prevouts:
@@ -98,25 +100,27 @@ class MempoolPolicyMixin:
         removed = 0
         with self._lock:
             to_remove = set()
-            prevout_idx = getattr(self, "_prevout_index", None)
+            prevout_idx = self._prevout_index
             if prevout_idx:
                 for prev in normalized_spent:
                     cid = prevout_idx.get(prev)
                     if cid and cid in self._pool:
                         to_remove.add(cid)
+
             if not to_remove:
                 for txid, tx in self._pool.items():
                     conflict = False
-                    for txin in getattr(tx, "inputs", []) or []:
-                        prev = self._prevout_key(
-                            getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
-                            getattr(txin, "vout", getattr(txin, "prev_index", None)),
-                        )
+                    inputs = tx.inputs or []
+                    for txin in inputs:
+                        prev_id = txin.txid
+                        v_val = txin.vout
+                        prev = self._prevout_key(prev_id, v_val)
                         if prev and prev in normalized_spent:
                             conflict = True
                             break
                     if conflict:
                         to_remove.add(txid)
+
             for txid in to_remove:
                 tx_obj = self._pool.pop(txid, None)
                 if tx_obj:
@@ -133,14 +137,15 @@ class MempoolPolicyMixin:
         return removed
 
     def prune_stale_entries(self) -> int:
-        current_version = getattr(self.utxo, "version", None)
+        current_version = self.utxo.version() if callable(self.utxo.version) else self.utxo.version
         if current_version is not None and current_version == self._last_prune_version:
             return 0
         now = time.time()
         if now - self._last_prune_reload_ts > max(float(CFG.MEMPOOL_FLUSH_INTERVAL), 5.0):
             self.utxo._load()
             self._last_prune_reload_ts = now
-        utxo_set = getattr(self.utxo, "utxos", {})
+
+        utxo_set = self.utxo.utxos
         tip = self.utxo._get_tip_height_from_state()
         removed = 0
         with self._lock:
@@ -164,7 +169,7 @@ class MempoolPolicyMixin:
 
     def add_valid_tx(self, tx_data) -> bool:
         self.last_error_reason = None
-        transaction_obj = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
+        transaction_obj = Tx.from_dict(tx_data) if type(tx_data) is dict else tx_data
 
         txid_hex = transaction_obj.txid.hex() if transaction_obj.txid else None
         if txid_hex and self.has_tx(txid_hex):
@@ -185,11 +190,11 @@ class MempoolPolicyMixin:
             return False
 
         new_prevouts = set()
-        for txin in getattr(transaction_obj, "inputs", []) or []:
-            key = self._prevout_key(
-                getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
-                getattr(txin, "vout", getattr(txin, "prev_index", None)),
-            )
+        inputs = transaction_obj.inputs or []
+        for txin in inputs:
+            prev_id = txin.txid
+            v_val = txin.vout
+            key = self._prevout_key(prev_id, v_val)
             if key:
                 new_prevouts.add(key)
 
@@ -199,19 +204,20 @@ class MempoolPolicyMixin:
         conflicts: list[Tx] = [self._pool[cid] for cid in conflict_ids if cid and cid in self._pool]
 
         if conflicts:
-            new_fee = int(getattr(transaction_obj, "fee", 0))
+            new_fee = int(transaction_obj.fee or 0)
             new_size = max(1, _estimate_tx_size_bytes(transaction_obj))
             new_rate = new_fee / new_size
             worst_old_rate = 0.0
             worst_old_fee = 0
             conflict_txids: list[str] = []
             for old in conflicts:
-                old_fee = int(getattr(old, "fee", 0))
+                old_fee = int(old.fee or 0)
                 old_rate = old_fee / max(1, _estimate_tx_size_bytes(old))
                 worst_old_rate = max(worst_old_rate, old_rate)
                 worst_old_fee = max(worst_old_fee, old_fee)
+                old_txid = old.txid
                 conflict_txids.append(
-                    old.txid.hex() if getattr(old, "txid", None) else ""
+                    old_txid.hex() if type(old_txid) in (bytes, bytearray) else str(old_txid or "")
                 )
 
             if (new_rate > worst_old_rate) or (new_fee > worst_old_fee):
@@ -220,10 +226,7 @@ class MempoolPolicyMixin:
                         self.remove_tx(ctid)
             else:
                 any_prev = next(iter(new_prevouts))
-                if isinstance(any_prev, PrevoutRef):
-                    prev_str = f"{any_prev.txid}:{any_prev.vout}"
-                else:
-                    prev_str = f"{any_prev[0]}:{any_prev[1]}"
+                prev_str = f"{any_prev.txid}:{any_prev.vout}"
                 self.last_error_reason = (
                     f"double_spend_conflict prev={prev_str} with={','.join(conflict_txids)}"
                 )

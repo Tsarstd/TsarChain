@@ -155,7 +155,11 @@ def _cpu_brand() -> str:
             except Exception:
                 pass
 
-        name = platform.processor() or getattr(platform.uname(), "processor", "") or ""
+        try:
+            uname_p = platform.uname().processor
+        except (AttributeError, Exception):
+            uname_p = ""
+        name = platform.processor() or uname_p or ""
         name = " ".join(str(name).strip().split())
         return name or "Unknown CPU"
     except Exception:

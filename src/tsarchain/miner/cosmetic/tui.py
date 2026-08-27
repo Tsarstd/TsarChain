@@ -10,6 +10,7 @@ import time
 import queue
 import psutil
 import threading
+import contextlib
 from collections import deque
 from typing import Callable, Optional
 
@@ -26,7 +27,7 @@ from tsarchain.utils.thread_check import get_thread_monitor
 
 def _enable_windows_vt100() -> None:
     if sys.platform == "win32":
-        try:
+        with contextlib.suppress(Exception):
             import ctypes
             kernel32 = ctypes.windll.kernel32
             
@@ -80,15 +81,10 @@ def _enable_windows_vt100() -> None:
                         h_conout, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN
                     )
                 kernel32.CloseHandle(h_conout)
-        except Exception:
-            pass
 
 
 def _human_bytes(n: float) -> str:
-    try:
-        n = float(n)
-    except Exception:
-        return "?"
+    n = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
         if n < 1024.0:
             return f"{n:.1f} {unit}"
@@ -97,10 +93,7 @@ def _human_bytes(n: float) -> str:
 
 
 def _human_hps(hps: float) -> str:
-    try:
-        hps = float(hps)
-    except Exception:
-        return "? H/s"
+    hps = float(hps)
     units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
     i = 0
     while hps >= 1000.0 and i < len(units) - 1:
@@ -163,6 +156,7 @@ class MinerTUI:
     def add_log(self, message: str) -> None:
         with self._render_lock:
             self.log_lines.append(message)
+        self.force_refresh()
 
     def start(self) -> None:
         if self._live is not None:
@@ -178,53 +172,44 @@ class MinerTUI:
             )
             self._hashrate_thread.start()
 
-        try:
-            self.console.clear()
-        except Exception:
-            pass
+        self.console.clear()
 
         self._live = Live(
             get_renderable=self._make_layout,
             console=self.console,
-            refresh_per_second=2,
+            refresh_per_second=4,
             vertical_overflow="crop",
             transient=False,
             screen=True,
         )
         self._live.start()
 
-
-
     def reset_uptime(self) -> None:
         with self._render_lock:
             self._start_ts = time.time()
+        self.force_refresh()
 
     def stop(self) -> None:
         self._stop_event.set()
         if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
+            self._live.stop()
             self._live = None
-        try:
+        with contextlib.suppress(Exception):
             sys.stdout.write("\033[?25h\033[0m")
             sys.stdout.flush()
-        except Exception:
-            pass
 
     def note_block_mined(self, _height: int | None = None) -> None:
         self._blocks_mined += 1
+        self.force_refresh()
 
     def set_hashrate(self, hps: float) -> None:
         self._last_hashrate = float(hps)
+        self.force_refresh()
 
     def force_refresh(self) -> None:
         if self._live is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._live.refresh()
-            except Exception:
-                pass
 
     # ---- internal loops ----
 
@@ -234,12 +219,12 @@ class MinerTUI:
             return
         while not self._stop_event.is_set():
             try:
-                msg = q.get(timeout=1.0)
-            except queue.Empty:
-                continue
+                msg = q.get(timeout=0.2)
             except Exception:
-                break
-            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                if self._stop_event.is_set():
+                    break
+                continue
+            if msg and len(msg) == 2 and msg[0] == "TOTAL_HPS":
                 self.set_hashrate(msg[1])
 
     def _make_layout(self) -> Layout:
@@ -288,42 +273,49 @@ class MinerTUI:
 
         now = time.time()
         if now - self._last_cpu_update > 1.5:
-            self._last_cpu_percent = psutil.cpu_percent(interval=None)
+            with contextlib.suppress(Exception):
+                self._last_cpu_percent = psutil.cpu_percent(interval=None)
             self._last_cpu_update = now
         cpu_pct = self._last_cpu_percent
-        vm = psutil.virtual_memory()
-        du = psutil.disk_usage("/")
+
+        try:
+            vm = psutil.virtual_memory()
+            ram_str = f"{_human_bytes(vm.used)} / {_human_bytes(vm.total)} ({vm.percent:.0f}%)"
+        except Exception:
+            ram_str = "N/A"
+
+        try:
+            du = psutil.disk_usage(".")
+            disk_str = f"{_human_bytes(du.free)} / {_human_bytes(du.total)}"
+        except Exception:
+            disk_str = "N/A"
 
         peers_in, peers_out = 0, 0
         if callable(self.peer_counts_fn):
-            try:
+            with contextlib.suppress(Exception):
                 res = self.peer_counts_fn()
                 if res:
                     peers_in, peers_out = res
-            except Exception:
-                pass
 
         height = -1
         if callable(self.chain_height_fn):
-            try:
-                height = self.chain_height_fn()
-            except Exception:
-                pass
-
-        thread_str = "N/A"
-        if self.show_threads and self.thread_monitor:
-            try:
-                tc = self.thread_monitor.get_thread_counts()
-                thread_str = f"{tc['alive']} alive / {tc['total']} total"
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                h = self.chain_height_fn()
+                if h is not None:
+                    height = h
 
         mempool_cnt = 0
         if callable(self.mempool_count_fn):
-            try:
-                mempool_cnt = self.mempool_count_fn() or 0
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                cnt = self.mempool_count_fn()
+                if cnt is not None:
+                    mempool_cnt = cnt
+
+        thread_str = "N/A"
+        if self.show_threads and self.thread_monitor:
+            with contextlib.suppress(Exception):
+                tc = self.thread_monitor.get_thread_counts()
+                thread_str = f"{tc.get('alive', 0)} alive / {tc.get('total', 0)} total"
 
         left_table = Table(show_header=False, box=None, padding=(0, 1))
         left_table.add_column("Metric", style="bold cyan", no_wrap=True)
@@ -333,14 +325,14 @@ class MinerTUI:
             left_table.add_row("Node Mode", "[bold blue]Relay & Mempool[/bold blue]")
             left_table.add_row("Chain Tip Height", f"[bold green]{height if height >= 0 else 'Syncing...'}[/bold green]")
             left_table.add_row("Mempool Pending", f"[bold yellow]{mempool_cnt} txs[/bold yellow]")
-            left_table.add_row("Memory (RAM)", f"{_human_bytes(vm.used)} / {_human_bytes(vm.total)} ({vm.percent:.0f}%)")
+            left_table.add_row("Memory (RAM)", ram_str)
             left_table.add_row("Uptime", uptime_str)
             layout["left"].update(Panel(left_table, title="[bold cyan]Node Status & Sync[/bold cyan]", border_style="cyan"))
         else:
             left_table.add_row("Hashrate", f"[bold green]{_human_hps(self._last_hashrate)}[/bold green]")
             left_table.add_row("Blocks Mined", f"[bold gold1]{self._blocks_mined}[/bold gold1]")
             left_table.add_row("CPU Power", f"{self.cores} cores ({cpu_pct:.0f}%)")
-            left_table.add_row("Memory (RAM)", f"{_human_bytes(vm.used)} / {_human_bytes(vm.total)} ({vm.percent:.0f}%)")
+            left_table.add_row("Memory (RAM)", ram_str)
             left_table.add_row("Uptime", uptime_str)
             layout["left"].update(Panel(left_table, title="[bold gold1]Mining & Performance[/bold gold1]", border_style="cyan"))
 
@@ -354,14 +346,14 @@ class MinerTUI:
             right_table.add_row("Outbound Peers", f"[bold white]{peers_out}[/bold white]")
             right_table.add_row("Active Threads", f"[bold yellow]{thread_str}[/bold yellow]")
             right_table.add_row("CPU Usage", f"[bold white]{cpu_pct:.0f}%[/bold white]")
-            right_table.add_row("Disk Free Space", f"[bold white]{_human_bytes(du.free)} / {_human_bytes(du.total)}[/bold white]")
+            right_table.add_row("Disk Free Space", disk_str)
             layout["right"].update(Panel(right_table, title="[bold dodger_blue1]Network & System Health[/bold dodger_blue1]", border_style="dodger_blue1"))
         else:
             right_table.add_row("Chain Tip Height", f"[bold green]{height if height >= 0 else 'Syncing...'}[/bold green]")
             right_table.add_row("Inbound Peers", f"[bold white]{peers_in}[/bold white]")
             right_table.add_row("Outbound Peers", f"[bold white]{peers_out}[/bold white]")
             right_table.add_row("Active Threads", f"[bold yellow]{thread_str}[/bold yellow]")
-            right_table.add_row("Disk Free Space", f"[bold white]{_human_bytes(du.free)} / {_human_bytes(du.total)}[/bold white]")
+            right_table.add_row("Disk Free Space", disk_str)
             layout["right"].update(Panel(right_table, title="[bold gold1]Network & Thread Health[/bold gold1]", border_style="magenta"))
 
         # 4. Logs Stream Panel

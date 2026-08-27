@@ -17,9 +17,6 @@ def get_explorer_providers(rpc_client):
 
     def _prov_get_info():
         r = _rpc({"type": "GET_NETWORK_INFO"})
-        if not isinstance(r, dict):
-            return {}
-        # normalize so the panel can render the overview
         tip = r.get("tip") or r.get("tip_hash")
         return {
             "network": r.get("net_id") or r.get("network_id") or "tsar-devnet-1",
@@ -36,13 +33,13 @@ def get_explorer_providers(rpc_client):
         if re.fullmatch(r"\d+", s):
             h = int(s)
             blk = _rpc({"type": "GET_BLOCK", "height": h})
-            if isinstance(blk, dict) and blk and not blk.get("error"):
+            if blk and not blk.get("error"):
                 blk.setdefault("height", h)
             return blk
 
         if re.fullmatch(r"[0-9a-fA-F]{64}", s):
             r = _rpc({"type": "GET_BLOCK", "hash": s})
-            if isinstance(r, dict) and r and not r.get("error"):
+            if r and not r.get("error"):
                 r.setdefault("hash", s)
                 return r
         return {"error": "not_found"}
@@ -50,21 +47,22 @@ def get_explorer_providers(rpc_client):
 
     def _prov_get_tx(txid: str):
         r = _rpc({"type": "GET_TX_DETAIL", "txid": str(txid).lower()})
-        if not isinstance(r, dict) or r.get("error"):
+        found = False
+        if r and not r.get("error"):
+            found = True
+        if not found:
             for pay in ({"type": "GET_TX", "txid": str(txid).lower()},
                         {"type": "GET_TRANSACTION", "txid": str(txid).lower()},
                         {"type": "TX_GET", "txid": str(txid).lower()}):
                 rr = _rpc(pay)
-                if isinstance(rr, dict) and not rr.get("error"):
+                if rr and not rr.get("error"):
                     r = rr
+                    found = True
                     break
-            else:
+            if not found:
                 return {"error": "not_found"}
 
         t = r.get("tx") or r.get("transaction") or r
-        if not isinstance(t, dict):
-            return {"error": "tx_bad_shape"}
-
         if "txid" not in t:
             t["txid"] = t.get("id") or t.get("hash") or str(txid).lower()
         if "inputs" not in t and "vin" in t:
@@ -74,7 +72,7 @@ def get_explorer_providers(rpc_client):
 
         if "is_coinbase" not in t:
             vin = t.get("inputs") or []
-            if vin and isinstance(vin, list):
+            if vin:
                 prev = (vin[0].get("txid") or vin[0].get("prev_txid") or "")
                 t["is_coinbase"] = (prev == "0"*64) or bool(vin[0].get("coinbase"))
         return t
@@ -82,53 +80,55 @@ def get_explorer_providers(rpc_client):
 
     def _prov_get_address(addr: str):
         bals = _rpc({"type": "GET_BALANCES", "addresses": [addr]})
-        utx  = _rpc({"type": "GET_UTXOS",    "address": addr})
+        utx  = _rpc({"type": "GET_TOTAL_UTXO",    "address": addr})
         his  = _rpc({"type": "GET_TX_HISTORY","address": addr})
 
         res = {"address": addr, "spendable": 0, "immature": 0, "pending": 0, "utxos": [], "history": []}
 
         def _pick_entry(d):
-            if not isinstance(d, dict):
+            if not d:
                 return None
 
             if any(k in d for k in ("spendable","confirmed","pending","immature")):
                 return d
             for key in ("balances","items","map"):
                 m = d.get(key)
-                if isinstance(m, dict):
-                    return m.get(addr) or next(iter(m.values()), {})
-            if isinstance(d.get("balance"), dict):
-                return d["balance"]
+                if m:
+                    try:
+                        return m.get(addr) or next(iter(m.values()), {})
+                    except AttributeError:
+                        pass
+            bal_inner = d.get("balance")
+            if bal_inner:
+                bal_inner.keys()
+                return bal_inner
+
             return None
 
         be = _pick_entry(bals) or {}
-        if isinstance(be, dict):
-            res["spendable"] = int(be.get("spendable") or be.get("confirmed") or be.get("balance_spendable") or 0)
-            res["immature"]  = int(be.get("immature")  or be.get("balance_immature")  or 0)
-            res["pending"]   = int(be.get("pending")   or be.get("unconfirmed") or be.get("balance_pending") or 0)
+
+        res["spendable"] = int(be.get("spendable") or be.get("confirmed") or be.get("balance_spendable") or 0)
+        res["immature"]  = int(be.get("immature")  or be.get("balance_immature")  or 0)
+        res["pending"]   = int(be.get("pending")   or be.get("unconfirmed") or be.get("balance_pending") or 0)
+
 
         utxo_list = []
-        if isinstance(utx, dict):
+        if utx:
             raw = utx.get("utxos") or utx.get("items") or []
-            if isinstance(raw, dict):
-                for k, v in raw.items():
-                    txid, idx = k.rsplit(":", 1); idx = int(idx)
-                    utxo_list.append({
-                        "txid": txid,
-                        "index": idx,
-                        "amount": v.get("amount") or v.get("value") or 0,
-                        "height": v.get("block_height") or v.get("height"),
-                        "confirmations": v.get("confirmations"),
-                    })
-            elif isinstance(raw, list):
-                utxo_list = raw
-        elif isinstance(utx, list):
-            utxo_list = utx
+
+            for k, v in raw.items():
+                txid, idx = k.rsplit(":", 1); idx = int(idx)
+                utxo_list.append({
+                    "txid": txid,
+                    "index": idx,
+                    "amount": v.get("amount") or v.get("value") or 0,
+                    "height": v.get("block_height") or v.get("height"),
+                    "confirmations": v.get("confirmations"),
+                })
+
         res["utxos"] = utxo_list
 
-        if isinstance(his, list):
-            res["history"] = his
-        elif isinstance(his, dict):
+        if his:
             res["history"] = his.get("history") or his.get("items") or []
 
         if (res["spendable"] == 0 and res["pending"] == 0 and res["immature"] == 0) and res["utxos"]:

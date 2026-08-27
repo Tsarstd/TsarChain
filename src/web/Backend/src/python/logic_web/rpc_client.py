@@ -31,9 +31,13 @@ def _mk_client(host: str, port: int):
 
 
 def _rpc_send(client, payload: dict):
-    if RPC_SOURCE and isinstance(payload, dict) and "rpc_source" not in payload:
-        payload = dict(payload)
-        payload["rpc_source"] = RPC_SOURCE
+    if RPC_SOURCE and payload:
+        try:
+            if "rpc_source" not in payload:
+                payload = dict(payload)
+                payload["rpc_source"] = RPC_SOURCE
+        except (TypeError, AttributeError):
+            pass
     return client.send(payload)
 
 
@@ -54,7 +58,10 @@ def _drop_client(host: str, port: int) -> None:
 
 
 def _payload_has_error(payload: object) -> bool:
-    return isinstance(payload, dict) and bool(payload.get("error"))
+    try:
+        return bool(payload.get("error"))
+    except AttributeError:
+        return False
 
 
 def _set_cache_scope(host: str, port: int) -> None:
@@ -69,7 +76,7 @@ def _cache_key(kind: str, *parts: object) -> str:
 def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
     if not payload:
         return False, None
-    if isinstance(payload, dict):
+    try:
         if payload.get("error"):
             ttl = db_cache.get_error_cache_ttl(payload.get("error") or payload.get("detail") or payload.get("reason"))
             return ttl is not None, ttl
@@ -78,6 +85,8 @@ def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
             return ttl is not None, ttl
         if len(payload) == 0:
             return False, None
+    except (AttributeError, TypeError):
+        pass
     return True, None
 
 

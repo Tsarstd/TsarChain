@@ -9,7 +9,7 @@ from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ...core.tx import Tx, TxIn, TxOut
 from ...contracts import graffiti as GRAFF
-from ...utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize
+from ...utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, extract_script_bytes
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -18,10 +18,10 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.tx")
 
 class TxHandler(NetworkHandlerProxy):
     def create_template_tx(self, from_addr, to_addr, amount, fee_rate):
-        if not isinstance(from_addr, str) or not isinstance(to_addr, str):
+        if type(from_addr) is not str or type(to_addr) is not str:
             raise ValueError("from/to address must be string")
 
-        amt_sat = int(amount * CFG.TSAR) if isinstance(amount, float) else int(amount)
+        amt_sat = int(amount * CFG.TSAR) if type(amount) is float else int(amount)
         # Ensure latest UTXO view from disk before building
         self.broadcast.utxodb._load()
         
@@ -62,9 +62,9 @@ class TxHandler(NetworkHandlerProxy):
 
 
     def create_template_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
-        if not isinstance(from_addr, str):
+        if type(from_addr) is not str:
             raise ValueError("from must be string")
-        if not isinstance(outputs, list) or not outputs:
+        if type(outputs) is not list or not outputs:
             raise ValueError("outputs must be non-empty list")
 
         fee_rate = int(max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB)))
@@ -92,7 +92,11 @@ class TxHandler(NetworkHandlerProxy):
         ins  = [TxIn(bytes.fromhex(u["txid"]), u["index"], amount=int(u["amount"])) for u in selected]
         non_opret, opret_outs = [], []
         for amt, spk in fixed_outs:
-            is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
+            try:
+                cmds = spk.cmds
+                is_opret = bool(cmds) and cmds[0] == OP_RETURN
+            except AttributeError:
+                is_opret = False
             (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
             
         outs = non_opret
@@ -133,7 +137,7 @@ class TxHandler(NetworkHandlerProxy):
 
     def _build_utxos_list(self, utxos_map, tip_height):
         utxos_list = []
-        for k, v in (utxos_map.items() if isinstance(utxos_map, dict) else []):
+        for k, v in (utxos_map.items() if type(utxos_map) is dict else []):
             txid_hex, idx_str = k.split(":")
             is_cb = bool(v.get("is_coinbase", False))
             born  = int(v.get("block_height", 0))
@@ -142,9 +146,9 @@ class TxHandler(NetworkHandlerProxy):
                 if confirmations < CFG.COINBASE_MATURITY:
                     continue
             spk_val = v.get("script_pubkey")
-            if isinstance(spk_val, bytes):
+            if type(spk_val) is bytes:
                 spk_bytes = spk_val
-            elif isinstance(spk_val, str):
+            elif type(spk_val) is str:
                 spk_bytes = bytes.fromhex(spk_val)
             else:
                 spk_bytes = b""
@@ -202,8 +206,8 @@ class TxHandler(NetworkHandlerProxy):
 
     def _check_tx_limits(self, tx_obj: Tx):
         weight, vsize, _, _ = compute_tx_weight_vsize(tx_obj)
-        vin = len(getattr(tx_obj, "inputs", []) or [])
-        vout = len(getattr(tx_obj, "outputs", []) or [])
+        vin = len(tx_obj.inputs or [])
+        vout = len(tx_obj.outputs or [])
 
         if vsize > int(CFG.MAX_TX_VSIZE):
             raise ValueError("tx_vsize_exceeds_limit")
@@ -223,7 +227,7 @@ class TxHandler(NetworkHandlerProxy):
         fixed_outs = []
         total_target = 0
         for item in outputs:
-            if not isinstance(item, dict):
+            if type(item) is not dict:
                 raise ValueError("output item must be dict")
             amt = int(item.get("amount", 0))
             if "spk_hex" in item:
@@ -246,10 +250,8 @@ class TxHandler(NetworkHandlerProxy):
         Validate graffiti OP_RETURN payload against node-side limits.
         Only triggers when payload starts with GRAFFITI_MAGIC.
         """
-        try:
-            raw = spk.serialize()
-        except Exception:
-            return
+
+        raw = spk.serialize()
         data = last_pushdata(raw)
         if not data:
             return
@@ -296,20 +298,13 @@ class TxHandler(NetworkHandlerProxy):
                 
         missing = [k for k in forced_keys if k not in utxo_by_key]
         if missing:
-            global_utxos = getattr(self.broadcast.utxodb, "utxos", {})
+            global_utxos = self.broadcast.utxodb.utxos or {}
             for key in list(missing):
                 txid_hex, idx_str = key.split(":")
                 if entry := global_utxos.get(key):
-                    tx_out = entry.get("tx_out")
-                    amt = int(getattr(tx_out, "amount", 0))
-                    spk = getattr(tx_out, "script_pubkey", None)
-                    ser = getattr(spk, "serialize", None)
-                    if callable(ser):
-                        spk_bytes = ser()
-                    elif isinstance(spk, (bytes, bytearray)):
-                        spk_bytes = bytes(spk)
-                    else:
-                        spk_bytes = b""
+                    tx_out = entry.get("tx_out") or entry
+                    amt = int((tx_out.get("amount", 0) if type(tx_out) is dict else (tx_out.amount or 0)) or 0)
+                    spk_bytes = extract_script_bytes(tx_out) or b""
                         
                     is_cb = bool(entry.get("is_coinbase", False))
                     born  = int(entry.get("block_height", 0))
@@ -333,7 +328,7 @@ class TxHandler(NetworkHandlerProxy):
             sender_spk_bytes = sender_spk.serialize()
             for key in list(missing):
                 meta = locks.get(key)
-                if not isinstance(meta, dict) or str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
+                if type(meta) is not dict or str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
                     continue
                 amt = int(meta.get("amount", 0))
                 if amt <= 0 or not sender_spk_bytes:

@@ -18,7 +18,7 @@ from bech32 import bech32_decode, bech32_encode, convertbits
 
 from ..utils import config as CFG
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize
+from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize, extract_script_bytes
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.graffiti")
@@ -71,7 +71,7 @@ def calc_proof_challenge(art_id: str, size_bytes: int, height: int, *, chunk_byt
 
 
 def hash_proof_chunk(chunk: bytes) -> str:
-    if not isinstance(chunk, (bytes, bytearray)):
+    if type(chunk) not in (bytes, bytearray):
         raise ValueError("chunk_must_be_bytes")
     if not chunk:
         raise ValueError("empty_chunk")
@@ -112,11 +112,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
     Validasi ukuran & tipe file graffiti sesuai kebijakan.
     Mengembalikan MIME ternormalisasi (lowercase) jika valid, atau raise ValueError jika melanggar.
     """
-    try:
-        size_int = int(size_bytes)
-    except Exception:
-        log.exception("[validate_graffiti_file] unexpected error")
-        raise ValueError("bad_size_bytes") from None
+    size_int = int(size_bytes)
     if size_int <= 0:
         raise ValueError("bad_size_bytes")
     if size_int > CFG.GRAFFITI_MAX_SIZE_BYTES:
@@ -130,7 +126,6 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
     ext = ""
     if filename:
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
-    log.info("mime=%s", mime_norm)
     if mime_norm and _is_valid_mime(mime_norm):
         if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
             raise ValueError("mime_not_allowed")
@@ -252,12 +247,12 @@ def build_metadata(
     
     if not _is_valid_sha256_hex(sha256_hex):
         raise ValueError("bad_sha256_hex")
-    if not isinstance(size_bytes, int) or size_bytes < 0:
+    if type(size_bytes) is not int or size_bytes < 0:
         raise ValueError("bad_size_bytes")
     mime_norm = validate_graffiti_file(size_bytes, mime)
     if not _is_valid_tsar_address(storer_addr):
         raise ValueError("bad_storer_addr")
-    if not isinstance(receipt_id, str) or not receipt_id.strip():
+    if type(receipt_id) is not str or not receipt_id.strip():
         raise ValueError("bad_receipt_id")
     if not _is_valid_tsar_address(creator_addr):
         raise ValueError("bad_creator_addr")
@@ -330,7 +325,7 @@ def build_comment_metadata(
         for k, v in extra.items():
             if k in meta:
                 continue
-            if isinstance(v, (str, bytes)) and len(str(v)) > 128:
+            if type(v) in (str, bytes) and len(str(v)) > 128:
                 continue
             meta[k] = v
     return meta
@@ -354,9 +349,9 @@ def build_payout_metadata(  # NOSONAR
         raise ValueError("bad_epoch")
 
     rec_list: list[dict[str, Any]] = []
-    if isinstance(recipients, dict):
+    if type(recipients) is dict:
         recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
-    if not isinstance(recipients, list) or not recipients:
+    if type(recipients) is not list or not recipients:
         raise ValueError("bad_recipients")
     for item in recipients:
         addr = str(item.get("addr") or item.get("address") or "").strip().lower()
@@ -371,7 +366,7 @@ def build_payout_metadata(  # NOSONAR
         "epoch": ep,
         "recipients": rec_list,
     }
-    if proof and isinstance(proof, dict):
+    if proof and type(proof) is dict:
         for k in ("offset", "length", "hash", "seed", "height", "epoch", "storer"):
             if k in proof:
                 meta[f"proof_{k}"] = proof.get(k)
@@ -379,7 +374,7 @@ def build_payout_metadata(  # NOSONAR
         for k, v in extra.items():
             if k in meta:
                 continue
-            if isinstance(v, (str, bytes)) and len(str(v)) > 128:
+            if type(v) in (str, bytes) and len(str(v)) > 128:
                 continue
             meta[k] = v
     return meta
@@ -408,7 +403,7 @@ def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
 
 
 def encode_payload(meta: Dict[str, Any]) -> bytes:
-    if not isinstance(meta, dict):
+    if type(meta) is not dict:
         raise ValueError("meta_must_be_dict")
     payload = CFG.GRAFFITI_MAGIC + _compact_json(meta)
     _guard_payload_size(payload)
@@ -426,7 +421,7 @@ def build_opret_hex(meta: Dict[str, Any]) -> str:
 
 def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
     try:
-        if not isinstance(data, (bytes, bytearray)):
+        if type(data) not in (bytes, bytearray):
             return None
         data = bytes(data)
         if not data.startswith(CFG.GRAFFITI_MAGIC):
@@ -435,7 +430,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
         if not blob:
             return None
         obj = json.loads(blob.decode('ascii'))
-        if not isinstance(obj, dict):
+        if type(obj) is not dict:
             return None
         
         event = str(obj.get("event", "POST")).strip().upper()
@@ -557,9 +552,9 @@ def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, s
 
 
 def _validate_and_format_recipients(recipients: list[dict[str, Any]] | dict[str, int]) -> list[dict[str, Any]]:
-    if isinstance(recipients, dict):
+    if type(recipients) is dict:
         recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
-    if not isinstance(recipients, list) or not recipients:
+    if type(recipients) is not list or not recipients:
         raise ValueError("recipients_empty")
     rec_list: list[dict[str, Any]] = []
     for item in recipients:
@@ -592,7 +587,7 @@ def _payout_max_claim(
     outs: list[TxOut] = [TxOut(int(rec_list[0]["amount"]), Script.p2wpkh_script(rec_list[0]["addr"]))]
     outs.append(_build_opret(rec_list))
     tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos_copy), outputs=outs, locktime=0, auto_compute_txid=True)
-    tx_final.fee = total_in - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    tx_final.fee = total_in - sum(int(o.amount or 0) for o in outs)
     return tx_final
 
 
@@ -637,7 +632,7 @@ def _payout_select_utxos(
     outs.append(_build_opret(rec_list))
 
     tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
-    tx_final.fee = acc - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    tx_final.fee = acc - sum(int(o.amount or 0) for o in outs)
     return tx_final
 
 
@@ -670,7 +665,7 @@ def _process_extra_meta(meta: dict[str, Any], extra: Optional[dict[str, Any]]) -
     for k, v in extra.items():
         if k in meta:
             continue
-        if isinstance(v, (str, bytes)) and len(str(v)) > 128:
+        if type(v) in (str, bytes) and len(str(v)) > 128:
             continue
         meta[k] = v
 
@@ -703,14 +698,14 @@ def _parse_post_merkle(obj: dict[str, Any]) -> bool:
 def _parse_post_payload(obj: dict[str, Any]) -> Optional[dict[str, Any]]:
     if not _is_valid_sha256_hex(obj.get("sha256", "")):
         return None
-    if not isinstance(obj.get("size"), int) or obj["size"] < 0:
+    if type(obj.get("size")) is not int or obj["size"] < 0:
         return None
     if not _is_valid_mime(obj.get("mime", "")):
         return None
     if not _is_valid_tsar_address(obj.get("storer", "")):
         return None
     receipt = obj.get("receipt", "")
-    if not isinstance(receipt, str) or not receipt.strip():
+    if type(receipt) is not str or not receipt.strip():
         return None
     creator_addr = obj.get("creator")
     if creator_addr and not _is_valid_tsar_address(creator_addr):
@@ -737,7 +732,7 @@ def _parse_comment_payload(obj: dict[str, Any]) -> Optional[dict[str, Any]]:
     art_id = obj.get("art_id", "")
     obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
     comment_hex = obj.get("comment", "")
-    if not isinstance(comment_hex, str):
+    if type(comment_hex) is not str:
         return None
     comment_bytes = bytes.fromhex(comment_hex)
     if not comment_bytes or len(comment_bytes) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
@@ -760,11 +755,11 @@ def _parse_comment_payload(obj: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 
 def _parse_payout_recipients(recipients: list[Any]) -> Optional[list[dict[str, Any]]]:
-    if not isinstance(recipients, list) or not recipients:
+    if type(recipients) is not list or not recipients:
         return None
     parsed_rec: list[dict[str, Any]] = []
     for item in recipients:
-        if not isinstance(item, dict):
+        if type(item) is not dict:
             return None
         addr = str(item.get("addr") or item.get("address") or "").strip().lower()
         amt = int(item.get("amount", 0))
@@ -784,7 +779,7 @@ def _parse_payout_proof_hints(obj: dict[str, Any]) -> bool:
             if k in ("offset", "length", "height"):
                 obj[pref_key] = int(val)
             elif k == "hash":
-                if not isinstance(val, str) or len(val) != 64:
+                if type(val) is not str or len(val) != 64:
                     return False
                 obj[pref_key] = val
             elif k == "storer":
@@ -820,7 +815,7 @@ def _is_valid_sha256_hex(x: str) -> bool:
 
 
 def _is_valid_mime(x: str) -> bool:
-    if not isinstance(x, str):
+    if type(x) is not str:
         return False
     x = x.strip()
     if not x:
@@ -839,7 +834,7 @@ def _is_valid_tsar_address(addr: str) -> bool:
 
 
 def _is_valid_art_id(art_id: str) -> bool:
-    if not isinstance(art_id, str):
+    if type(art_id) is not str:
         return False
     return bool(ART_ID_RE.fullmatch(art_id.strip().lower()))
 
@@ -863,7 +858,7 @@ def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
     Accept legacy 64-hex art_id or new prefixed form.
     If prefer_prefix=True and legacy is provided, return prefixed variant; otherwise preserve legacy.
     """
-    if not isinstance(art_id, str):
+    if type(art_id) is not str:
         raise ValueError("bad_art_id")
     aid = art_id.strip().lower()
     if aid.startswith(CFG.ART_ID_PREFIX):
@@ -877,7 +872,7 @@ def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
 
 
 def _encode_comment(comment_text: str) -> str:
-    if not isinstance(comment_text, str):
+    if type(comment_text) is not str:
         raise ValueError("comment_text must be str")
     data = comment_text.encode("utf-8")
     if not data:
@@ -924,16 +919,12 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
     """
     spk_hex = _pool_spk_bytes(art_id).hex()
     out: list[dict] = []
-    # Coba via index get() jika tersedia
     bucket = utxo_db.get(spk_hex) or {}
-    if isinstance(bucket, dict):
+    if type(bucket) is dict:
         for key, entry in bucket.items():
             txid_hex, idx_str = key.split(":")
-            tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-            if isinstance(tx_out, dict):
-                amt = int(tx_out.get("amount", 0))
-            else:
-                amt = int(getattr(tx_out, "amount", entry.get("amount", 0) if isinstance(entry, dict) else getattr(entry, "amount", 0)) or 0)
+            tx_out = entry.get("tx_out", entry) if type(entry) is dict else entry
+            amt = int((tx_out.get("amount", 0) if type(tx_out) is dict else (tx_out.amount or 0)) or 0)
             out.append({
                 "txid": txid_hex,
                 "vout": int(idx_str),
@@ -941,32 +932,20 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
                 "script_pubkey": spk_hex,
             })
 
-    # Fallback: scan utxo_db.utxos in-memory
-    for key, entry in getattr(utxo_db, "utxos", {}).items():
-        tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-        if tx_out is None:
-            tx_out = entry
-        
-        spk_obj = tx_out.get("script_pubkey") if isinstance(tx_out, dict) else getattr(tx_out, "script_pubkey", None)
-        if spk_obj is None:
+    utxos_dict = utxo_db.utxos or {}
+    for key, entry in utxos_dict.items():
+        spk_bytes = extract_script_bytes(entry)
+        if not spk_bytes or spk_bytes.hex().lower() != spk_hex:
             continue
-        ser = getattr(spk_obj, "serialize", None)
-        if callable(ser):
-            spk_str = ser().hex()
-        elif isinstance(spk_obj, (bytes, bytearray)):
-            spk_str = bytes(spk_obj).hex()
-        else:
-            spk_str = str(spk_obj)
-
-        if spk_str.lower() == spk_hex:
-            amt = int(tx_out.get("amount", 0) if isinstance(tx_out, dict) else getattr(tx_out, "amount", 0) or 0)
-            txid_hex, idx_str = key.split(":")
-            out.append({
-                "txid": txid_hex,
-                "vout": int(idx_str),
-                "amount": amt,
-                "script_pubkey": spk_hex,
-            })
+        tx_out = entry.get("tx_out", entry) if type(entry) is dict else entry
+        amt = int((tx_out.get("amount", 0) if type(tx_out) is dict else (tx_out.amount or 0)) or 0)
+        txid_hex, idx_str = key.split(":")
+        out.append({
+            "txid": txid_hex,
+            "vout": int(idx_str),
+            "amount": amt,
+            "script_pubkey": spk_hex,
+        })
     # dedup by outpoint
     uniq = {}
     for item in out:

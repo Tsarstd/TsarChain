@@ -67,90 +67,31 @@ def clog(message: str, color: str = COL.GREY):
 def _safe_peer_counts(net) -> tuple[int, int]:
     if not net:
         return 0, 0
-    try:
-        inbound = len(getattr(net, "inbound_peers", ()))
-        outbound = len(getattr(net, "outbound_peers", ()))
-        return inbound, outbound
-    except Exception:
-        return 0, 0
-
-
-def _count_txpool(pool) -> int:
-    if pool is None:
-        return 0
-    try:
-        p = getattr(pool, "_pool", None)
-        if p is not None and not isinstance(p, (bytes, str)):
-            try:
-                return len(p)
-            except TypeError:
-                pass
-        get_size = getattr(pool, "get_mempool_size", None)
-        if callable(get_size):
-            res = get_size()
-            if isinstance(res, int):
-                return res
-        get_txs = getattr(pool, "get_all_txs", None)
-        if callable(get_txs):
-            txs = get_txs()
-            if txs is not None and not isinstance(txs, (bytes, str)):
-                try:
-                    return len(txs)
-                except TypeError:
-                    pass
-        try:
-            return len(pool)
-        except TypeError:
-            pass
-    except Exception:
-        pass
-    return 0
+    inbound = len(net.inbound_peers) if net.inbound_peers else 0
+    outbound = len(net.outbound_peers) if net.outbound_peers else 0
+    return inbound, outbound
 
 
 def _safe_mempool_count(runner) -> int:
     if not runner:
         return 0
-    try:
-        net = getattr(runner, "network", None)
-        if net:
-            bcast = getattr(net, "broadcast", None)
-            if bcast:
-                pool = getattr(bcast, "mempool", None)
-                if pool is not None:
-                    count = _count_txpool(pool)
-                    if count > 0:
-                        return count
-            pool = getattr(net, "mempool", None)
-            if pool is not None:
-                count = _count_txpool(pool)
-                if count > 0:
-                    return count
-
-        bc = getattr(runner, "blockchain", None)
-        if bc:
-            get_size = getattr(bc, "get_mempool_size", None)
-            if callable(get_size):
-                count = get_size()
-                if isinstance(count, int) and count > 0:
-                    return count
-            pool = getattr(bc, "get_mempool", lambda: None)() or getattr(bc, "_mempool", None)
-            if pool is not None:
-                return _count_txpool(pool)
-    except Exception:
-        pass
+    if runner.blockchain:
+        count = runner.blockchain.get_mempool_size()
+        if count > 0:
+            return count
+    if runner.network and runner.network.broadcast and runner.network.broadcast.mempool:
+        return len(runner.network.broadcast.mempool._pool)
+    if runner.blockchain:
+        return runner.blockchain.get_mempool_size()
     return 0
 
 
 def _normalize_cores(cores: int | None) -> int | None:
-    cpu_total = mp.cpu_count()
+    cpu_total = mp.cpu_count() or 1
     if cores is None:
-        return cpu_total or 1
+        return cpu_total
     cores_int = int(cores)
-    if cores_int <= 0:
-        return None
-    if cpu_total:
-        cores_int = min(cores_int, cpu_total)
-    return cores_int
+    return min(cores_int, cpu_total) if cores_int > 0 else None
 
 
 def show_thread_report():
@@ -160,21 +101,24 @@ def show_thread_report():
 
 def choose_mode() -> int:
     console = Console()
-    console.print(Panel("[bold yellow]Choose Execution Mode[/bold yellow]\n[bold green]0[/bold green] : Mining Mode (Full Node + Miner)\n[bold blue]1[/bold blue] : Node Only (Relay & Mempool)", border_style="cyan"))
+    console.print(Panel(
+        "[bold yellow]Choose Execution Mode[/bold yellow]\n"
+        "[bold green]0[/bold green] : Mining Mode (Full Node + Miner)\n"
+        "[bold blue]1[/bold blue] : Node Only (Relay & Mempool)",
+        border_style="cyan",
+    ))
 
-    while True:
-        try:
-            sel = Prompt.ask("[bold cyan]Select Mode[/bold cyan]", choices=["0", "1"], default="0").strip()
-        except (KeyboardInterrupt, EOFError):
-            console.print("[yellow]Using default: Mining Mode (0)[/yellow]")
-            return 0
+    try:
+        sel = Prompt.ask("[bold cyan]Select Mode[/bold cyan]", choices=["0", "1"], default="0").strip()
+    except (KeyboardInterrupt, EOFError):
+        console.print("[yellow]Using default: Mining Mode (0)[/yellow]")
+        return 0
 
-        if sel == "0":
-            console.print("[bold green]✓ Selected Mode: Mining Mode (0)[/bold green]\n")
-            return 0
-        elif sel == "1":
-            console.print("[bold blue]✓ Selected Mode: Node Only (1)[/bold blue]\n")
-            return 1
+    if sel == "1":
+        console.print("[bold blue]✓ Selected Mode: Node Only (1)[/bold blue]\n")
+        return 1
+    console.print("[bold green]✓ Selected Mode: Mining Mode (0)[/bold green]\n")
+    return 0
 
         
 def parse_args():
@@ -266,10 +210,8 @@ def main():
             mode=" Node Only",
             randomx_mode=" Disabled",
             hashrate_queue=None,
-            chain_height_fn=lambda: int(getattr(runner.blockchain, "height", -1))
-            if runner and runner.blockchain
-            else -1,
-            peer_counts_fn=lambda: _safe_peer_counts(getattr(runner, "network", None)),
+            chain_height_fn=lambda: int(runner.blockchain.height) if runner.blockchain else -1,
+            peer_counts_fn=lambda: _safe_peer_counts(runner.network),
             mempool_count_fn=lambda: _safe_mempool_count(runner),
             node_only=True,
         )
@@ -332,10 +274,8 @@ def main():
         mode=" Mining...",
         randomx_mode=mode_label,
         hashrate_queue=progress_q,
-        chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))
-        if miner and miner.blockchain
-        else -1,
-        peer_counts_fn=lambda: _safe_peer_counts(getattr(miner, "network", None)),
+        chain_height_fn=lambda: int(miner.blockchain.height) if miner.blockchain else -1,
+        peer_counts_fn=lambda: _safe_peer_counts(miner.network),
         mempool_count_fn=lambda: _safe_mempool_count(miner),
     )
     

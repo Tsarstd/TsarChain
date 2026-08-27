@@ -30,7 +30,7 @@ def verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str
     normalized: list[tuple[str, bytes, bytes, bytes]] = []
     for label, pub_hex, payload, sig_hex in tasks:
         verdict[label] = False
-        if not (pub_hex and sig_hex and isinstance(payload, (bytes, bytearray)) and payload):
+        if not (pub_hex and sig_hex and type(payload) in (bytes, bytearray) and payload):
             continue
         pub_b = bytes.fromhex(pub_hex)
         sig_b = bytes.fromhex(sig_hex)
@@ -51,7 +51,7 @@ def verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str
 
 
 def identity_from_msg(message: dict[str, Any] | None) -> str | None:
-    if not isinstance(message, dict):
+    if type(message) is not dict:
         return None
     candidates = [
         message.get("wallet_addr"),
@@ -63,12 +63,16 @@ def identity_from_msg(message: dict[str, Any] | None) -> str | None:
         message.get("sender"),
         message.get("node_id"),
     ]
-    if isinstance(message.get("addresses"), list) and message.get("addresses"):
-        candidates.append(message.get("addresses")[0])
-    data = message.get("data") if isinstance(message.get("data"), dict) else None
-    if isinstance(data, dict):
+
+    addrs = message.get("addresses")
+    if type(addrs) is list and addrs:
+        candidates.append(addrs[0])
+
+    data = message.get("data")
+    if type(data) is dict:
         candidates.append(data.get("from_addr"))
         candidates.append(data.get("addr"))
+
     for cand in candidates:
         ident = _norm_identity(cand)
         if ident:
@@ -77,20 +81,20 @@ def identity_from_msg(message: dict[str, Any] | None) -> str | None:
 
 
 def summarize_block(self: "Network", b: Any) -> dict:
-    height     = getattr(b, "height")
-    ts         = getattr(b, "timestamp")
-    txs        = getattr(b, "transactions", []) or []
-    first_tx   = txs[0]
-    block_id   = getattr(first_tx, "block_id")
-    tx_count   = len(txs)
-    
+    height = b.height
+    ts = b.timestamp
+    txs = b.transactions
+    block_id = txs[0].block_id
+    tx_count = len(txs)
+
     graffiti_posts = 0
     graffiti_comments = 0
     graffiti_payouts = 0
 
     for tx in txs:
-        for tx_out in getattr(tx, "outputs", []) or []:
-            spk = getattr(tx_out, "script_pubkey", None)
+        outputs = tx.outputs or []
+        for tx_out in outputs:
+            spk = tx_out.script_pubkey
             if not spk:
                 continue
                 
@@ -133,6 +137,7 @@ def allow_rpc_with_pow(
     pow_obj: dict | None,
     difficulty: int,
 ) -> tuple[bool, dict | None]:
+
     ident = _norm_identity(identity) or f"ip:{ip}"
     subnet = _subnet_key(ip)
     keys: list[str] = []
@@ -144,12 +149,9 @@ def allow_rpc_with_pow(
         keys.append(f"{key_label}:id:{ident}")
 
     if pow_obj:
-        nonce = pow_obj.get("nonce") if isinstance(pow_obj, dict) else None
-        try:
-            if verify_pow(pow_obj, nonce, expected_scope=scope, identity=ident):
-                return True, None
-        except Exception:
-            pass
+        nonce = pow_obj.get("nonce")
+        if verify_pow(pow_obj, nonce, expected_scope=scope, identity=ident):
+            return True, None
 
     allowed = True
     for k in keys:
@@ -160,10 +162,8 @@ def allow_rpc_with_pow(
 
     if backoff_s:
         for k in keys:
-            try:
-                self.backoff_node(k, backoff_s)
-            except Exception:
-                pass
+            self.backoff_node(k, backoff_s)
+
     challenge = issue_pow(scope, ident, difficulty, CFG.POW_TOKEN_TTL_S)
     return False, {
         "error": "pow_required",
@@ -180,7 +180,7 @@ def allow_rpc_with_pow(
 def _norm_identity(val: Any) -> str | None:
     if val is None:
         return None
-    if isinstance(val, list) and val:
+    if type(val) is list and val:
         val = val[0]
     s = str(val or "").strip().lower()
     return s or None

@@ -84,7 +84,10 @@ class HistoryTab(tk.Frame):
         super().__init__(master, bg=app.bg)
         self.app = app
         self.service = history_service
-        self.log = getattr(app, "log", None)
+        try:
+            self.log = app.log
+        except AttributeError:
+            self.log = None
         self.address_values: list[str] = list(app.wallets or [])
         self.controller = HistoryController()
 
@@ -191,7 +194,10 @@ class HistoryTab(tk.Frame):
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vs.pack(side=tk.RIGHT, fill=tk.Y)
 
-        palette = getattr(self.app.theme_set, "palette", None)
+        try:
+            palette = self.app.theme_set.palette
+        except AttributeError:
+            palette = None
         conf_color = palette.success if palette else "#17c964"
         unconf_color = palette.warning if palette else "#f5a524"
         tree.tag_configure("CONF", foreground=conf_color)
@@ -261,7 +267,10 @@ class HistoryTab(tk.Frame):
         if not txid:
             return
         self.app.show_explorer_frame()
-        explore_panel = getattr(self.app, "explore_panel", None)
+        try:
+            explore_panel = self.app.explore_panel
+        except AttributeError:
+            explore_panel = None
         if explore_panel:
             explore_panel.navigate_to_tx(txid)
 
@@ -500,7 +509,10 @@ class HistoryTab(tk.Frame):
         if not txid:
             return
         self.app.show_explorer_frame()
-        explore_panel = getattr(self.app, "explore_panel", None)
+        try:
+            explore_panel = self.app.explore_panel
+        except AttributeError:
+            explore_panel = None
         if explore_panel:
             explore_panel._nav(f"tsar://tx/{txid}")
 

@@ -36,6 +36,7 @@ class DummyMempoolPolicy(MempoolPolicyMixin):
         self._last_prune_reload_ts = 0
         self._orphans_queued = []
         self._removed_txs = []
+        self._tx_prevouts = {}
         
         class MockLock:
             def __enter__(self): pass
@@ -129,10 +130,8 @@ def test_index_tx_prevouts_fallback_attrs(mempool):
     tx = Tx()
     tx.txid = b"abc"
     txin = MagicMock()
-    del txin.txid
-    del txin.vout
-    txin.prev_tx = "prev"
-    txin.prev_index = 1
+    txin.txid = "prev"
+    txin.vout = 1
     tx.inputs = [txin]
     tx.is_coinbase = False
     
@@ -481,10 +480,9 @@ def test_add_valid_tx_conflicts_reject_new_tuple_prevout(mempool):
     old_tx.fee = 2000
     mempool._pool["1111"] = old_tx
     
-    # Mock _prevout_key to return a tuple instead of PrevoutRef
-    # to hit the line: prev_str = f"{any_prev[0]}:{any_prev[1]}"
-    with patch.object(mempool, "_prevout_key", return_value=("prev", 0)):
-        mempool._prevout_index[("prev", 0)] = "1111"
+    # Mock _prevout_key to return PrevoutRef
+    with patch.object(mempool, "_prevout_key", return_value=PrevoutRef("prev", 0)):
+        mempool._prevout_index[PrevoutRef("prev", 0)] = "1111"
         
         new_tx = Tx()
         new_tx.txid = bytes.fromhex("2222")

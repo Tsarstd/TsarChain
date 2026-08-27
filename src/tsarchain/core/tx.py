@@ -20,6 +20,8 @@ from ..utils.helpers import (
     tx_to_compact_tuple,
     txid_from_compact,
     wtxid_from_compact,
+    serialize_tx,
+    script_to_address,
 )
 
 # ---------------- Logger ----------------
@@ -32,16 +34,17 @@ _COINBASE_EXTRA_STRUCT = "<BHHq"
 
 
 def _extract_script_bytes(script) -> bytes:
-    ser = getattr(script, "serialize", None)
-    if callable(ser):
-        return ser()
-    if isinstance(script, str):
+    if script is None:
+        return b""
+    if type(script) in (bytes, bytearray):
+        return bytes(script)
+    if type(script) is str:
         return bytes.fromhex(script)
-    return bytes(script or b"")
+    return script.serialize()
 
 
 class Tx:
-    def __init__(self, version: int = 1, locktime: int = 0, txid: bytes = None, is_coinbase: bool = False, inputs=None, outputs=None, auto_compute_txid: bool = True):
+    def __init__(self, version: int = 1, locktime: int = 0, txid: bytes | None = None, is_coinbase: bool = False, inputs=None, outputs=None, auto_compute_txid: bool = True, to_address: str | None = None, block_id: str | None = None, height: int | None = None, reward: int | None = None):
         self.version = int(version)
         self.inputs = list(inputs or [])
         self.outputs = list(outputs or [])
@@ -52,12 +55,20 @@ class Tx:
             self.fee = 0
         else:
             self.fee = None
+        self._cached_txid_bytes = None
+        self._cached_raw_tx_nowit = None
+        self._cached_raw_tx_w = None
+        self._received_at = None
+        self.txid_hex = None
+        self.raw = None
+        self.size_bytes = None
+        self.to_address = to_address
+        self.block_id = block_id
+        self.height = height
+        self.reward = reward
 
         if auto_compute_txid:
-            try:
-                self.compute_txid()
-            except Exception:
-                log.exception("auto_compute_err")
+            self.compute_txid()
             
     # -------- Fee helpers ----------
 
@@ -71,7 +82,7 @@ class Tx:
                 self.inputs[i].amount = int(a)
 
         total_in = sum(int(a) for a in input_amounts)
-        total_out = sum(int(getattr(out, "amount", 0) or 0) for out in self.outputs)
+        total_out = sum(int(out.amount or 0) for out in self.outputs)
         fee = total_in - total_out
         if fee < 0:
             raise ValueError("Output is greater than input, negative costs")
@@ -82,20 +93,12 @@ class Tx:
     # -------- Signing ----------
 
     def sign_input(self, index: int, priv_key_hex: str, prev_output, amount: int) -> bool:
-        spk = getattr(prev_output, "script_pubkey", None)
-        if spk is not None:
-            ser = getattr(spk, "serialize", None)
-            script_pubkey_bytes = ser() if callable(ser) else (bytes(spk) if isinstance(spk, (bytes, bytearray)) else bytes.fromhex(spk) if isinstance(spk, str) else b"")
-        else:
-            ser = getattr(prev_output, "serialize", None)
-            if callable(ser):
-                script_pubkey_bytes = ser()
-            elif isinstance(prev_output, (bytes, bytearray)):
-                script_pubkey_bytes = bytes(prev_output)
-            elif isinstance(prev_output, str):
-                script_pubkey_bytes = bytes.fromhex(prev_output)
-            else:
-                raise TypeError("prev_output must be TxOut, Script, or bytes")
+        try:
+            spk = prev_output.script_pubkey
+        except AttributeError:
+            spk = prev_output
+        script_pubkey_bytes = _extract_script_bytes(spk)
+
         if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
             raise ValueError("Not a P2WPKH")
         pubkey_hash = script_pubkey_bytes[2:22]
@@ -112,7 +115,7 @@ class Tx:
         return True
     
     def sigops_count(self, utxo_lookup=None) -> int:
-        if getattr(self, "is_coinbase", False):
+        if self.is_coinbase:
             return 0
 
         total = 0
@@ -122,11 +125,11 @@ class Tx:
 
             if utxo_lookup is not None:
                 prev_spk = utxo_lookup(vin.txid, vin.vout)
-                if isinstance(prev_spk, str):
+                if type(prev_spk) is str:
                     prev_spk = bytes.fromhex(prev_spk)
 
-            script_sig = to_bytes(getattr(vin, "script_sig", b""))
-            wstack = [ to_bytes(w) for w in getattr(vin, "witness", []) or [] ]
+            script_sig = to_bytes(vin.script_sig.serialize())
+            wstack = [ to_bytes(w) for w in (vin.witness or []) ]
 
             if prev_spk is not None:
                 if is_p2wpkh(prev_spk):
@@ -164,21 +167,24 @@ class Tx:
 
     # -------- Serde ----------
 
+    def serialize(self, include_witness: bool = True) -> bytes:
+        return serialize_tx(self, include_witness=include_witness)
+
     def to_dict(self, include_txid: bool = True) -> dict:
         return {
             "version": self.version,
             "inputs": [txin.to_dict() for txin in self.inputs],
             "outputs": [txout.to_dict() for txout in self.outputs],
             "locktime": self.locktime,
-            "txid": self.txid.hex() if (include_txid and isinstance(self.txid, (bytes, bytearray))) else None,
+            "txid": self.txid.hex() if (include_txid and type(self.txid) in (bytes, bytearray)) else None,
             "fee": self.fee,
             "is_coinbase": self.is_coinbase,}
 
     @classmethod
     def from_dict(cls, data: dict):
-        if isinstance(data, Tx):
+        if type(data) is cls or type(data) is Tx:
             return data
-        if not isinstance(data, dict):
+        if type(data) is not dict:
             raise TypeError("from_dict expects dict or Tx")
 
         txid = bytes.fromhex(data["txid"]) if data.get("txid") else None
@@ -200,26 +206,25 @@ class Tx:
     def to_storage_bytes(self) -> bytes:
         parts = [struct.pack(_TX_HEADER_STRUCT, self.version, self.locktime, self.is_coinbase, len(self.inputs))]
         for txin in self.inputs:
-            prev_b = txin.txid if isinstance(txin.txid, (bytes, bytearray)) else bytes.fromhex(txin.txid)
+            prev_b = txin.txid if type(txin.txid) in (bytes, bytearray) else bytes.fromhex(txin.txid)
             ss_bytes = _extract_script_bytes(txin.script_sig)
-            parts.append(struct.pack(_TXIN_STRUCT, prev_b, int(txin.vout), int(getattr(txin, "amount", 0) or 0), len(ss_bytes), len(txin.witness)))
+            parts.append(struct.pack(_TXIN_STRUCT, prev_b, int(txin.vout), int(txin.amount or 0), len(ss_bytes), len(txin.witness)))
             if ss_bytes:
                 parts.append(ss_bytes)
             for w in txin.witness:
-                wb = bytes.fromhex(w) if isinstance(w, str) else bytes(w)
+                wb = bytes.fromhex(w) if type(w) is str else bytes(w)
                 parts.append(struct.pack("<H", len(wb)) + wb)
         
         parts.append(struct.pack("<H", len(self.outputs)))
         for txout in self.outputs:
-            amt = int(getattr(txout, "amount", 0) or 0)
-            spk = getattr(txout, "script_pubkey", None)
-            spk_bytes = _extract_script_bytes(spk)
+            amt = int(txout.amount or 0)
+            spk_bytes = _extract_script_bytes(txout.script_pubkey)
             parts.append(struct.pack("<QH", amt, len(spk_bytes)) + spk_bytes)
             
         if self.is_coinbase:
-            to_addr = (getattr(self, "to_address", "") or "").encode("utf-8")
-            blk_id = (str(getattr(self, "block_id", "") or "")).encode("utf-8")
-            h = int(getattr(self, "height", 0) or 0)
+            to_addr = (self.to_address or "").encode("utf-8")
+            blk_id = (str(self.block_id or "")).encode("utf-8")
+            h = int(self.height or 0)
             parts.append(struct.pack(_COINBASE_EXTRA_STRUCT, len(to_addr), len(blk_id), 0, h))
             parts.append(to_addr)
             parts.append(blk_id)
@@ -311,12 +316,12 @@ class Tx:
 
 
 class TxIn:
-    def __init__(self, txid: bytes, vout: int, amount: int = 0, script_sig: Script = None, witness: list = None):
-        if not isinstance(txid, (bytes, bytearray)) or len(txid) != 32:
+    def __init__(self, txid: bytes, vout: int, amount: int = 0, script_sig: Script = None, witness: list = None, sequence: int = 0xFFFFFFFF):
+        if type(txid) not in (bytes, bytearray) or len(txid) != 32:
             raise ValueError("txid must be 32-byte bytes")
-        if not isinstance(vout, int):
+        if type(vout) is not int:
             raise TypeError("vout must be an integer")
-        if not isinstance(amount, int) or amount < 0:
+        if type(amount) is not int or amount < 0:
             raise ValueError("amount must be an integer >= 0")
 
         self.txid = bytes(txid)
@@ -324,18 +329,40 @@ class TxIn:
         self.amount = int(amount)
         self.script_sig = script_sig or Script([])
         self.witness = list(witness or [])
+        self.sequence = int(sequence)
+
+    @property
+    def prev_tx(self) -> bytes:
+        return self.txid
+
+    @prev_tx.setter
+    def prev_tx(self, val: bytes):
+        self.txid = bytes(val)
+
+    @property
+    def prev_index(self) -> int:
+        return self.vout
+
+    @prev_index.setter
+    def prev_index(self, val: int):
+        self.vout = int(val)
 
     def to_dict(self) -> dict:
+        ser_hex = self.script_sig.to_hex
+        if callable(ser_hex):
+            ss_hex = ser_hex()
+        else:
+            ss_hex = str(self.script_sig or "")
         return {
             "txid": self.txid.hex(),
             "vout": self.vout,
             "amount": self.amount,
-            "script_sig": getattr(self.script_sig, "to_hex", lambda: self.script_sig.serialize().hex())(),
-            "witness": [w.hex() if isinstance(w, (bytes, bytearray)) else str(w) for w in self.witness],}
+            "script_sig": ss_hex,
+            "witness": [w.hex() if type(w) in (bytes, bytearray) else str(w) for w in self.witness],}
 
     @classmethod
     def from_dict(cls, data: dict):
-        if not isinstance(data, dict):
+        if type(data) is not dict:
             raise TypeError("TxIn.from_dict expects dict")
         raw = bytes.fromhex(data["script_sig"]) if data.get("script_sig") else b""
         script_sig = Script.parse(raw) if raw else Script([])
@@ -354,13 +381,16 @@ class TxIn:
 
 class TxOut:
     def __init__(self, amount: int, script_pubkey: Script):
-        if not isinstance(amount, int) or amount < 0:
+        if type(amount) is not int or amount < 0:
             raise ValueError("amount must be integer >= 0")
-        if not isinstance(script_pubkey, Script):
-            raise TypeError("script_pubkey must be Script instance")
-            
+
+        _ = script_pubkey.serialize
         self.amount = amount
         self.script_pubkey = script_pubkey
+
+    @property
+    def address(self) -> str | None:
+        return script_to_address(self.script_pubkey)
 
     def to_dict(self) -> dict:
         return {
@@ -369,13 +399,13 @@ class TxOut:
 
     @classmethod
     def from_dict(cls, data: dict):
-        if not isinstance(data, dict):
+        if type(data) is not dict:
             raise TypeError("TxOut.from_dict expects dict")
         
         spk = data.get("script_pubkey")
-        if isinstance(spk, dict):
+        if type(spk) is dict:
             script = Script.from_dict(spk)
-        elif isinstance(spk, str):
+        elif type(spk) is str:
             script = Script.deserialize(bytes.fromhex(spk))
         else:
             raise TypeError("Unsupported script_pubkey format")

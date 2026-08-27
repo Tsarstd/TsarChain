@@ -156,16 +156,20 @@ class NodeClient:
 
                     if not resp:
                         continue
+
                     outer = json.loads(resp.decode("utf-8"))
-                    if isinstance(outer, dict) and outer.get("type") == "PONG":
+                    if outer.get("type") == "PONG":
                         found.append((ip, port))
                         continue
+
                     if is_envelope(outer):
                         try:
                             inner = verify_and_unwrap(outer, get_pubkey_by_nodeid=None)
-                            if isinstance(inner, dict) and inner.get("type") == "PONG":
+
+                            if inner.get("type") == "PONG":
                                 found.append((ip, port))
                                 continue
+
                         except Exception:
                             log.exception("Failed to verify/unwrap envelope response from %s:%d.", ip, port)
                             continue

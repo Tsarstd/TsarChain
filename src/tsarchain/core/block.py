@@ -33,9 +33,9 @@ class BlockHeader:
     def serialize_block(self) -> bytes:
         return (
             int_to_little_endian(self.version, 4) +
-            (self.prev_block_hash if isinstance(self.prev_block_hash, (bytes, bytearray))
+            (self.prev_block_hash if type(self.prev_block_hash) in (bytes, bytearray)
              else bytes.fromhex(self.prev_block_hash)) +
-            (self.merkle_root if isinstance(self.merkle_root, (bytes, bytearray))
+            (self.merkle_root if type(self.merkle_root) in (bytes, bytearray)
              else bytes.fromhex(self.merkle_root)) +
             int_to_little_endian(self.timestamp, 4) +
             int_to_little_endian(self.bits, 4) +
@@ -50,6 +50,9 @@ class Block:
         self.transactions = transactions
         self.difficulty = difficulty
         self.chainwork = chainwork
+        self.size_bytes: Optional[int] = None
+        self.vbytes: Optional[int] = None
+        self.weight: Optional[int] = None
         if merkle_root_precomputed is not None:
             self.merkle_root = bytes(merkle_root_precomputed)
         else:
@@ -84,15 +87,15 @@ class Block:
     def _parse_bits(v):
         if v is None:
             return int(CFG.INITIAL_BITS) & 0xFFFFFFFF
-        if isinstance(v, bool):
+        if type(v) is bool:
             return int(CFG.INITIAL_BITS) & 0xFFFFFFFF
-        if isinstance(v, int):
+        if type(v) is int:
             return v & 0xFFFFFFFF
-        if isinstance(v, float):
+        if type(v) is float:
             if v.is_integer():
                 return int(v) & 0xFFFFFFFF
             raise TypeError(f"bits float non-integer: {v}")
-        if isinstance(v, str):
+        if type(v) is str:
             s = v.strip().lower()
             val = int(s, 16) if s.startswith("0x") else int(s)
             return val & 0xFFFFFFFF
@@ -101,23 +104,26 @@ class Block:
     @classmethod
     def from_dict(cls, data):
         tx_list = []
-        for tx_data in data["transactions"]:
+        for tx_data in data.get("transactions", []) or []:
             tx_type = tx_data.get("type")
             if tx_type == "Coinbase" or tx_data.get("is_coinbase"):
                 tx_obj = CoinbaseTx.from_dict(tx_data)
             else:
                 tx_obj = Tx.from_dict(tx_data)
             tx_list.append(tx_obj)
-        prev_hash_bytes = (
-            bytes.fromhex(data["prev_block_hash"])
-            if not isinstance(data["prev_block_hash"], bytes)
-            else data["prev_block_hash"])
+        prev_hash = data.get("prev_block_hash", b"\x00" * 32)
+        if type(prev_hash) is str:
+            prev_hash_bytes = bytes.fromhex(prev_hash)
+        elif type(prev_hash) in (bytes, bytearray):
+            prev_hash_bytes = bytes(prev_hash)
+        else:
+            prev_hash_bytes = b"\x00" * 32
         mr_bytes = data.get("merkle_root")
-        if isinstance(mr_bytes, str):
+        if type(mr_bytes) is str:
             mr_bytes = bytes.fromhex(mr_bytes)
         
         obj = cls(
-            height=data["height"],
+            height=data.get("height", 0),
             prev_block_hash=prev_hash_bytes,
             transactions=tx_list,
             timestamp=data.get("timestamp"),
@@ -132,7 +138,7 @@ class Block:
         # cache hash if provided to avoid double PoW verify; validation will still verify
         try:
             h_str = data.get("hash")
-            if isinstance(h_str, str) and len(h_str) >= 64:
+            if type(h_str) is str and len(h_str) >= 64:
                 h_b = bytes.fromhex(h_str)
                 obj._cached_hash = h_b
                 obj._cached_hash_nonce = obj.nonce
@@ -143,11 +149,18 @@ class Block:
             log.exception("cache_hash_skiped")
 
         meta = data.get("_meta")
-        if isinstance(meta, dict):
+        if type(meta) is dict:
             obj._meta = dict(meta)
-            for attr in ("chainwork", "difficulty", "size_bytes", "vbytes", "weight"):
-                if getattr(obj, attr, None) is None and attr in meta:
-                    setattr(obj, attr, meta[attr])
+            if obj.chainwork is None and "chainwork" in meta:
+                obj.chainwork = meta["chainwork"]
+            if obj.difficulty is None and "difficulty" in meta:
+                obj.difficulty = meta["difficulty"]
+            if obj.size_bytes is None and "size_bytes" in meta:
+                obj.size_bytes = meta["size_bytes"]
+            if obj.vbytes is None and "vbytes" in meta:
+                obj.vbytes = meta["vbytes"]
+            if obj.weight is None and "weight" in meta:
+                obj.weight = meta["weight"]
         return obj
 
     def header(self) -> bytes:
@@ -156,18 +169,17 @@ class Block:
 
     def to_storage_bytes(self) -> bytes:
         header_bytes = self.header()
-        if not isinstance(header_bytes, (bytes, bytearray)):
+        if type(header_bytes) not in (bytes, bytearray):
             header_bytes = b"\x00" * 80
-        h = int(getattr(self, "height", 0) or 0)
-        diff = int(getattr(self, "difficulty", 0) or 0)
-        cw = int(getattr(self, "chainwork", 0) or 0)
+        h = int(self.height or 0)
+        diff = int(self.difficulty or 0)
+        cw = int(self.chainwork or 0)
         tail = struct.pack("<QQQ", h, diff, cw)
-        txs = getattr(self, "transactions", []) or []
+        txs = self.transactions or []
         tx_parts = [struct.pack("<I", len(txs))]
         for tx in txs:
-            to_storage = getattr(tx, "to_storage_bytes", None)
-            tx_raw = to_storage() if callable(to_storage) else Tx.to_storage_bytes(tx)
-            if not isinstance(tx_raw, (bytes, bytearray)):
+            tx_raw = tx.to_storage_bytes()
+            if type(tx_raw) not in (bytes, bytearray):
                 tx_raw = b""
             tx_parts.append(struct.pack("<I", len(tx_raw)) + tx_raw)
         return header_bytes + tail + b"".join(tx_parts)
@@ -219,7 +231,7 @@ class Block:
     def hash(self) -> bytes:
         # Recompute only if inputs changed (nonce/bits/merkle_root/prev_hash)
         if (
-            isinstance(self._cached_hash, (bytes, bytearray))
+            type(self._cached_hash) in (bytes, bytearray)
             and self._cached_hash_nonce == self.nonce
             and self._cached_hash_bits == self.bits
             and self._cached_hash_mr == self.merkle_root
@@ -247,7 +259,7 @@ class Block:
             return None
 
         total_cores = mp.cpu_count()
-        if not isinstance(use_cores, int) or use_cores < 1:
+        if type(use_cores) is not int or use_cores < 1:
             use_cores = 1
         num_cores = use_cores if use_cores <= total_cores else total_cores
 
@@ -286,7 +298,7 @@ class Block:
             stop_event=stop_event,
         )
 
-        if isinstance(found, tuple) and len(found) == 2:
+        if type(found) is tuple and len(found) == 2:
             nonce, h = found
             self.nonce = int(nonce)
             if pow_hash_verify_light(self.header(), key_hint=pow_key) != h:

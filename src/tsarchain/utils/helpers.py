@@ -162,13 +162,74 @@ def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint:
 # -----------------------------
 
 
+def extract_script_bytes(spk, _depth: int = 0) -> bytes | None:
+    if spk is None or _depth > 3:
+        return None
+    if type(spk) in (bytes, bytearray):
+        return bytes(spk)
+    if type(spk) is str:
+        try:
+            return bytes.fromhex(spk)
+        except ValueError:
+            return None
+    if type(spk) is dict:
+        inner = spk.get("tx_out", spk.get("script_pubkey", spk.get("script")))
+        return extract_script_bytes(inner, _depth + 1) if inner is not None else None
+
+    try:
+        spk_attr = spk.script_pubkey
+        if spk_attr is not None:
+            res = extract_script_bytes(spk_attr, _depth + 1)
+            if res is not None:
+                return res
+    except AttributeError:
+        pass
+
+    try:
+        tx_out_attr = spk.tx_out
+        if tx_out_attr is not None:
+            res = extract_script_bytes(tx_out_attr, _depth + 1)
+            if res is not None:
+                return res
+    except AttributeError:
+        pass
+
+    try:
+        ser = spk.serialize
+        if callable(ser):
+            res = ser()
+            if type(res) in (bytes, bytearray):
+                return bytes(res)
+    except (AttributeError, TypeError):
+        pass
+
+    return None
+
+
+def script_to_address(script) -> str | None:
+    b = extract_script_bytes(script)
+    if not b:
+        return None
+    if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
+        data = [0] + list(convertbits(b[2:], 8, 5, True))
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
+        data = [0] + list(convertbits(b[2:], 8, 5, True))
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    return None
+
+
 def to_bytes(x) -> bytes:
-    if isinstance(x, Script):
+    try:
         return x.serialize()
-    if isinstance(x, (bytes, bytearray)):
+    except (AttributeError, TypeError):
+        pass
+    if type(x) in (bytes, bytearray):
         return bytes(x)
-    if isinstance(x, str):
+    try:
         return bytes.fromhex(x)
+    except (TypeError, ValueError):
+        pass
     return b""
 
 
@@ -270,10 +331,17 @@ def decode_address(address: str) -> bytes:
     return bytes(decoded)
 
 
-def spkhex_to_address(spk_hex: str) -> str | None:
-    if isinstance(spk_hex, bytes):
-        spk_hex = spk_hex.hex()
-    spk_hex = spk_hex.lower()
+def spkhex_to_address(spk_hex) -> str | None:
+    if spk_hex is None:
+        return None
+    if type(spk_hex) in (bytes, bytearray):
+        spk_hex = bytes(spk_hex).hex()
+    elif type(spk_hex) is not str:
+        try:
+            spk_hex = spk_hex.hex()
+        except (AttributeError, TypeError):
+            spk_hex = str(spk_hex)
+    spk_hex = str(spk_hex).lower()
     if spk_hex.startswith("0014") and len(spk_hex) == 44:
         prog = bytes.fromhex(spk_hex[4:])
         data = [0] + convertbits(list(prog), 8, 5, True)
@@ -349,51 +417,53 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
 
 
 def _estimate_tx_size_bytes(tx) -> int:
-    to_storage = getattr(tx, "to_storage_bytes", None)
+    to_storage = tx.to_storage_bytes
     if callable(to_storage):
-        try:
-            raw = to_storage()
-            if isinstance(raw, (bytes, bytearray)):
-                return len(raw)
-        except Exception:
-            pass
+        raw = to_storage()
+        if type(raw) in (bytes, bytearray):
+            return len(raw)
     size = 10
-    for txin in getattr(tx, "inputs", []) or []:
+    inputs = tx.inputs or []
+    for txin in inputs:
         size += 40
-        if getattr(txin, "script_sig", None):
-            size += len(txin.script_sig.serialize())
-        if getattr(txin, "witness", None):
-            size += sum(len(w) for w in txin.witness)
-    for txout in getattr(tx, "outputs", []) or []:
+        script_sig = txin.script_sig
+        if script_sig:
+            size += len(script_sig.serialize())
+
+        witness = txin.witness
+        if witness:
+            size += sum(len(w) for w in witness)
+
+    outputs = tx.outputs or []
+    for txout in outputs:
         size += 8
-        if getattr(txout, "script_pubkey", None):
-            size += len(txout.script_pubkey.serialize())
+        spk = txout.script_pubkey
+        if spk:
+            size += len(spk.serialize())
     return int(size)
 
 
 def estimate_block_size_bytes(block) -> int:
-    to_storage_block = getattr(block, "to_storage_bytes", None)
+    to_storage_block = block.to_storage_bytes
     if callable(to_storage_block):
-        try:
-            raw = to_storage_block()
-            if isinstance(raw, (bytes, bytearray)):
-                return len(raw)
-        except Exception:
-            pass
-    txs = getattr(block, "transactions", []) or []
+        raw = to_storage_block()
+        if type(raw) in (bytes, bytearray):
+            return len(raw)
+
+    txs = block.transactions or []
     total = 108  # 80 bytes header + 24 bytes metadata + 4 bytes tx count
     for tx in txs:
-        to_storage = getattr(tx, "to_storage_bytes", None)
+        to_storage = tx.to_storage_bytes
         if callable(to_storage):
-            try:
-                total += 4 + len(to_storage())
+            raw = to_storage()
+            if type(raw) in (bytes, bytearray):
+                total += 4 + len(raw)
                 continue
-            except Exception:
-                pass
-        if getattr(tx, "inputs", None) is not None and getattr(tx, "outputs", None) is not None:
-            total += _estimate_tx_size_bytes(tx)
+
+        if tx.inputs is not None and tx.outputs is not None:
+            total += 4 + _estimate_tx_size_bytes(tx)
         else:
-            total += len(json.dumps(tx))
+            total += 4 + len(json.dumps(tx))
     return int(total)
 
 
@@ -514,15 +584,20 @@ class Script:
         return b.hex()
 
 
+    def to_hex(self) -> str:
+        return self.serialize().hex()
+
+
     def serialize(self) -> bytes:
         out = bytearray()
         for cmd in self.cmds:
-            if isinstance(cmd, int):
-                out.append(cmd & 0xff)  # opcode
-            elif isinstance(cmd, (bytes, bytearray)):
-                out += self._encode_pushdata(bytes(cmd))
-            else:
-                raise TypeError(f"Unsupported script cmd type: {type(cmd)}")
+            try:
+                out.append(cmd & 0xff)  # opcode (int)
+            except TypeError:
+                try:
+                    out += self._encode_pushdata(bytes(cmd))
+                except Exception:
+                    raise TypeError(f"Unsupported script cmd type: {type(cmd)}")
         return bytes(out)
 
 
@@ -547,11 +622,9 @@ class Script:
     def to_dict(self):
         cmds_serializable = []
         for cmd in self.cmds:
-            if isinstance(cmd, int):
-                cmds_serializable.append(cmd)
-            elif isinstance(cmd, (bytes, bytearray)):
-                cmds_serializable.append(bytes(cmd).hex())
-            else:
+            try:
+                cmds_serializable.append(cmd.hex())
+            except AttributeError:
                 cmds_serializable.append(cmd)
         return {'cmds': cmds_serializable}
 
@@ -560,11 +633,9 @@ class Script:
     def from_dict(cls, data: dict) -> 'Script':
         cmds = []
         for cmd in data.get('cmds', []):
-            if isinstance(cmd, int):
-                cmds.append(cmd)
-            elif isinstance(cmd, str):
+            try:
                 cmds.append(bytes.fromhex(cmd))
-            else:
+            except (TypeError, ValueError):
                 cmds.append(cmd)
         return cls(cmds)
 
@@ -575,6 +646,11 @@ class Script:
     def p2wpkh_script(address: str):
         pubkey_hash = decode_address(address)
         return Script([OP_0, pubkey_hash])
+
+    @staticmethod
+    def p2wsh_script(address: str):
+        prog = decode_address(address)
+        return Script([OP_0, prog])
 
 
 class DerSigError(ValueError):
@@ -624,9 +700,10 @@ def der_encode_sig_strict(r: int, s: int) -> bytes:
 
 
 def der_parse_sig_strict(sig: bytes) -> Tuple[int, int]:
-    if not isinstance(sig, (bytes, bytearray)):
+    try:
+        sig = bytes(sig)
+    except TypeError:
         raise DerSigError("signature must be bytes")
-    sig = bytes(sig)
     if len(sig) < 8:  # minimal DER with tiny r,s
         raise DerSigError("signature too short")
 
@@ -741,40 +818,60 @@ def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighas
 
 
 def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes) -> bool:
-    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
+    try:
+        d_bytes = bytes(digest32)
+        if len(d_bytes) != 32:
+            raise ValueError("digest32 must be 32-byte")
+    except TypeError:
         raise ValueError("digest32 must be 32-byte")
     pub = _vk_to_bytes(vk)
     if not pub:
         raise ValueError("verifying key conversion failed")
-    return bool(_native_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
+    return bool(_native_verify_der_low_s(pub, d_bytes, bytes(der_sig)))
 
 
 def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
-    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
+    try:
+        d_bytes = bytes(digest32)
+        if len(d_bytes) != 32:
+            raise ValueError("digest32 must be 32-byte")
+    except TypeError:
         raise ValueError("digest32 must be 32-byte")
-    return bytes(_native_sign_der_low_s(priv_hex, bytes(digest32)))
+    return bytes(_native_sign_der_low_s(priv_hex, d_bytes))
 
 
 def merkle_root(transactions):
     txids = []
     for tx in transactions or []:
-        if isinstance(tx, (bytes, bytearray)):
+        if type(tx) in (bytes, bytearray):
             txid = bytes(tx)
+        elif type(tx) is str:
+            txid = bytes.fromhex(tx)
         else:
-            txid_val = getattr(tx, "txid", None)
-            if callable(txid_val):
-                txid = txid_val()
-            elif txid_val is not None:
-                txid = txid_val
-            else:
-                hash_val = getattr(tx, "hash", None)
-                if callable(hash_val):
-                    txid = hash_val()
+            try:
+                txid_val = tx.txid
+                if callable(txid_val):
+                    txid = txid_val()
+                elif txid_val is not None:
+                    txid = txid_val
                 else:
+                    txid = None
+            except AttributeError:
+                txid = None
+            if txid is None:
+                try:
+                    hash_val = tx.hash
+                    if callable(hash_val):
+                        txid = hash_val()
+                    else:
+                        raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
+                except AttributeError:
                     raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-        if isinstance(txid, str):
-            txid = bytes.fromhex(txid)
-        txid = bytes(txid)
+
+            if type(txid) is str:
+                txid = bytes.fromhex(txid)
+            elif type(txid) in (bytes, bytearray):
+                txid = bytes(txid)
         if len(txid) != 32:
             raise ValueError(f"txid must be 32 bytes, got {len(txid)}")
         txids.append(txid)
@@ -821,55 +918,123 @@ def sighash_bip143_compact(tx_tuple, input_index: int, script_code: bytes, value
 
 
 def tx_to_compact_tuple(tx) -> tuple:
-    version = int(getattr(tx, "version", 1))
-    locktime = int(getattr(tx, "locktime", 0))
+    try:
+        version = int(tx.version)
+    except (AttributeError, TypeError, ValueError):
+        version = 1
+    try:
+        locktime = int(tx.locktime)
+    except (AttributeError, TypeError, ValueError):
+        locktime = 0
     inputs_c = []
-    for txin in getattr(tx, "inputs", []) or []:
-        prev = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
-        if isinstance(prev, str):
-            prev = bytes.fromhex(prev)
-        prev_b = bytes(prev) if isinstance(prev, (bytes, bytearray)) else b""
-        vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)) or 0)
-        seq = int(getattr(txin, "sequence", 0xffffffff))
+    try:
+        inputs = tx.inputs or []
+    except AttributeError:
+        inputs = []
+    for txin in inputs:
+        try:
+            prev = txin.txid
+        except AttributeError:
+            try:
+                prev = txin.prev_tx
+            except AttributeError:
+                prev = None
+        if type(prev) in (bytes, bytearray):
+            prev_b = bytes(prev)
+        elif type(prev) is str:
+            try:
+                prev_b = bytes.fromhex(prev)
+            except ValueError:
+                prev_b = b""
+        else:
+            prev_b = b""
+
+        try:
+            vout = int(txin.vout)
+        except (AttributeError, TypeError, ValueError):
+            try:
+                vout = int(txin.prev_index)
+            except (AttributeError, TypeError, ValueError):
+                vout = 0
+        try:
+            seq = int(txin.sequence)
+        except (AttributeError, TypeError, ValueError):
+            seq = 0xFFFFFFFF
+
         # Preserve scriptsig so coinbase txid includes block-specific entropy
         script_sig_bytes = b""
-        script_sig = getattr(txin, "script_sig", None)
-        ser_sig = getattr(script_sig, "serialize", None)
-        if callable(ser_sig):
-            script_sig_bytes = ser_sig()
-        elif isinstance(script_sig, (bytes, bytearray)):
-            script_sig_bytes = bytes(script_sig)
-        elif isinstance(script_sig, str):
-            script_sig_bytes = bytes.fromhex(script_sig)
+        try:
+            script_sig = txin.script_sig
+        except AttributeError:
+            script_sig = None
+        if script_sig is not None:
+            try:
+                script_sig_bytes = script_sig.serialize()
+            except (AttributeError, TypeError):
+                if type(script_sig) in (bytes, bytearray):
+                    script_sig_bytes = bytes(script_sig)
+                elif type(script_sig) is str:
+                    try:
+                        script_sig_bytes = bytes.fromhex(script_sig)
+                    except ValueError:
+                        script_sig_bytes = b""
+                else:
+                    script_sig_bytes = b""
         wit_vec = []
-        for w in getattr(txin, "witness", None) or []:
-            if isinstance(w, str):
-                wit_vec.append(bytes.fromhex(w))
-                continue
-            if isinstance(w, (bytes, bytearray)):
+        try:
+            witness = txin.witness or []
+        except AttributeError:
+            witness = []
+        for w in witness:
+            if type(w) is str:
+                try:
+                    wit_vec.append(bytes.fromhex(w))
+                except ValueError:
+                    wit_vec.append(w.encode("utf-8"))
+            elif type(w) in (bytes, bytearray):
                 wit_vec.append(bytes(w))
             else:
-                wit_vec.append(b"")
+                wit_vec.append(bytes(w or b""))
         inputs_c.append((prev_b, vout, seq, script_sig_bytes, wit_vec))
 
     outputs_c = []
-    for txout in getattr(tx, "outputs", []) or []:
-        amt = int(getattr(txout, "amount", 0))
-        spk = getattr(txout, "script_pubkey", None)
-        ser_spk = getattr(spk, "serialize", None)
-        if callable(ser_spk):
-            spk_b = ser_spk()
-        elif isinstance(spk, (bytes, bytearray)):
-            spk_b = bytes(spk)
-        elif isinstance(spk, str):
-            spk_b = bytes.fromhex(spk)
+    try:
+        outputs = tx.outputs or []
+    except AttributeError:
+        outputs = []
+    for txout in outputs:
+        try:
+            amt = int(txout.amount or 0)
+        except (AttributeError, TypeError):
+            amt = 0
+        try:
+            spk = txout.script_pubkey
+        except AttributeError:
+            spk = None
+        if spk is not None:
+            try:
+                spk_b = spk.serialize()
+            except (AttributeError, TypeError):
+                if type(spk) in (bytes, bytearray):
+                    spk_b = bytes(spk)
+                elif type(spk) is str:
+                    try:
+                        spk_b = bytes.fromhex(spk)
+                    except ValueError:
+                        spk_b = b""
+                else:
+                    spk_b = b""
         else:
             spk_b = b""
         outputs_c.append((amt, spk_b))
 
-    tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, bool(getattr(tx, "is_coinbase", False)))
+    try:
+        is_cb = bool(tx.is_coinbase)
+    except AttributeError:
+        is_cb = False
+    tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, is_cb)
     txid = txid_from_compact(tx_tuple)
-    return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
+    return (version, locktime, inputs_c, outputs_c, txid, is_cb)
 
 
 # =======================

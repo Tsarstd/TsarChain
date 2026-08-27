@@ -227,9 +227,23 @@ def test_handle_get_block_by_hash_success(mock_cfg, mock_node):
     assert res["height"] == 5
     assert res["hash"] == "hash5"
 
+
+@patch("tsarchain.network.node_logic.handlers.CFG")
+def test_handle_get_block_by_hash_0x_prefix(mock_cfg, mock_node):
+    mock_cfg.DEBUG_BENCHMARKS = False
+    mock_cfg.CANONICAL_SEP = (',', ':')
+
+    res = handle_get_block_by_hash(mock_node, "0xhash5")
+
+    assert res["type"] == "BLOCK"
+    assert res["height"] == 5
+    assert res["hash"] == "hash5"
+
+
 @patch("tsarchain.network.node_logic.handlers.CFG")
 def test_handle_get_block_by_hash_not_found(mock_cfg, mock_node):
     mock_cfg.DEBUG_BENCHMARKS = False
     
     res = handle_get_block_by_hash(mock_node, "hash99")
     assert res == {"type": "BLOCK", "error": "not_found"}
+

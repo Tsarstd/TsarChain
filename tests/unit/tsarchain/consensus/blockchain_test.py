@@ -51,6 +51,12 @@ def mock_kv():
         yield mock_iter_prefix
 
 
+@pytest.fixture(autouse=True)
+def mock_empty_genesis_state():
+    with patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed'):
+        yield
+
+
 @pytest.fixture
 def mock_config(monkeypatch):
     """Mock CFG attributes safely without replacing CFG with a bare MagicMock."""
@@ -218,9 +224,12 @@ def test_from_dict(mock_config, mock_block_module):
 
 def test_attach_mempool(mock_config):
     bc = Blockchain()
+    assert bc.get_mempool_size() == 0
     mock_pool = Mock()
+    mock_pool._pool = {"tx1": "data", "tx2": "data"}
     bc.attach_mempool(mock_pool)
     assert bc.get_mempool() is mock_pool
+    assert bc.get_mempool_size() == 2
 
 
 def test_shutdown(mock_config):
@@ -235,8 +244,7 @@ def test_start_persist_worker(mock_config):
     with patch('threading.Thread') as mock_thread, \
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True) as mock_load, \
-         patch.object(Blockchain, 'load_state', autospec=True) as mock_state, \
-         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True) as mock_empty:
+         patch.object(Blockchain, 'load_state', autospec=True) as mock_state:
         thread_instance = Mock()
         mock_thread.return_value = thread_instance
         queue_instance = Mock()
@@ -254,8 +262,7 @@ def test_schedule_persist(mock_config):
     with patch('threading.Thread') as mock_thread, \
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True), \
-         patch.object(Blockchain, 'load_state', autospec=True), \
-         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
+         patch.object(Blockchain, 'load_state', autospec=True):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
         bc = Blockchain()

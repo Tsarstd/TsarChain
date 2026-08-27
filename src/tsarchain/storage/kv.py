@@ -60,21 +60,20 @@ def _init_native_store(name: str = "chain"):
         if store is not None:
             _native_stores[path] = store
             _native_store = store
-            dt = getattr(store, "drive_type", "unknown")
-            log.info(f"Native LMDB storage initialized at '{path}' for '{name}' [Drive Profile: {dt.upper()}]")
+            try:
+                dt = store.drive_type
+            except AttributeError:
+                dt = "unknown"
+            log.info(f"Native LMDB storage initialized at '{path}' for '{name}' [Drive Profile: {str(dt or 'unknown').upper()}]")
         return store
 
 def sync(force: bool = False) -> None:
     store = _ensure_env("chain")
-    sync_fn = getattr(store, "sync", None)
-    if callable(sync_fn):
-        sync_fn(force)
+    store.sync(force)
     with _init_lock:
-        for s in (_native_stores.values()):
+        for s in _native_stores.values():
             if s is not store:
-                s_sync = getattr(s, "sync", None)
-                if callable(s_sync):
-                    s_sync(force)
+                s.sync(force)
 
 def _ensure_env(name: str = "chain"):
     path = get_db_path(name)

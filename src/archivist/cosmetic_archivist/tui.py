@@ -93,12 +93,7 @@ class ArchivistTUI:
             return
 
         psutil.cpu_percent(interval=None)
-
-        try:
-            self.console.clear()
-        except Exception:
-            pass
-
+        self.console.clear()
         self._live = Live(
             get_renderable=self._make_layout,
             console=self.console,
@@ -112,42 +107,32 @@ class ArchivistTUI:
     def stop(self) -> None:
         self._stop_event.set()
         if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
+            self._live.stop()
             self._live = None
-        try:
-            sys.stdout.write("\033[?25h\033[0m")
-            sys.stdout.flush()
-        except Exception:
-            pass
+        sys.stdout.write("\033[?25h\033[0m")
+        sys.stdout.flush()
 
     def force_refresh(self) -> None:
         if self._live is not None:
-            try:
-                self._live.refresh()
-            except Exception:
-                pass
+            self._live.refresh()
 
     def _make_layout(self) -> Layout:
         term_height = self.console.height or 24
         term_height = max(18, term_height)
         body_size = 8  # 6 content rows + 2 border lines
 
-        # Extract stats from orchestrator if present
-        info = getattr(self.orchestrator, "last_info", {}) or {}
-        idx = getattr(self.orchestrator, "last_index", {}) or {}
-        files = idx.get("files") if isinstance(idx, dict) else {}
-        files = files if isinstance(files, dict) else {}
-
-        connected = bool(getattr(self.orchestrator, "connected", False))
-        bytes_used = idx.get("bytes_used", 0) if isinstance(idx, dict) else 0
+        info = self.orchestrator.last_info or {}
+        idx = self.orchestrator.last_index or {}
+        files = idx.get("files") or {}
+        connected = bool(self.orchestrator.connected)
+        bytes_used = idx.get("bytes_used", 0)
         file_count = len(files)
-        peers_cnt = info.get("peers", "-") if isinstance(info, dict) else "-"
-        tip_height = info.get("height", "-") if isinstance(info, dict) else "-"
-        pending_paid_cnt = len(getattr(self.orchestrator, "pending_paid", set()) or ())
-        pool_cnt = len(getattr(self.orchestrator, "pool_data", {}) or {})
+        peers_cnt = info.get("peers", "-")
+        tip_height = info.get("height", "-")
+        pending_paid = self.orchestrator.pending_paid or ()
+        pending_paid_cnt = len(pending_paid)
+        pool_data_val = self.orchestrator.pool_data or {}
+        pool_cnt = len(pool_data_val)
 
         # Header Text & Tab Bar
         conn_status = "[bold green]Connected[/bold green]" if connected else "[bold red]Connecting...[/bold red]"
@@ -195,7 +180,10 @@ class ArchivistTUI:
                 Layout(name="body", ratio=1),
             )
             layout["header"].update(Panel(Align.center(header_text), border_style="cyan"))
-            pool_data = getattr(self.orchestrator, "pool_data", {}) or {}
+            try:
+                pool_data = self.orchestrator.pool_data or {}
+            except AttributeError:
+                pool_data = {}
             layout["body"].update(Panel(format_pool_table(pool_data), border_style="gold1"))
             return layout
 
@@ -255,11 +243,8 @@ class ArchivistTUI:
 
         thread_str = "N/A"
         if self.show_threads and self.thread_monitor:
-            try:
-                tc = self.thread_monitor.get_thread_counts()
-                thread_str = f"{tc['alive']} alive / {tc['total']} total"
-            except Exception:
-                pass
+            tc = self.thread_monitor.get_thread_counts()
+            thread_str = f"{tc['alive']} alive / {tc['total']} total"
 
         right_table = Table(show_header=False, box=None, padding=(0, 1))
         right_table.add_column("Metric", style="bold cyan", no_wrap=True)

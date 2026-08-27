@@ -21,6 +21,7 @@ class DummyMempool(MempoolStorageMixin):
         self._change_seq = 0
         self._last_flush = 0
         self.filepath = "dummy.json"
+        self._tx_prevouts = {}
         
         class MockLock:
             def __enter__(self): pass

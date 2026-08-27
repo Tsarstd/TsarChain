@@ -48,7 +48,7 @@ def test_tsar_log_viewer_lifecycle_and_features(tmp_path):
         viewer = TsarLogViewer(
             master,
             queue_=q,
-            attach_to_root=True,
+            attach_to_root=False,
             filter_queue=queue.Queue()
         )
 
@@ -140,7 +140,10 @@ def test_open_log_toplevel_and_start_gui_no_tk():
 
 def test_export_log_bundle(tmp_path):
     bundle_path = tmp_path / "test_bundle.zip"
+    mock_root = MagicMock()
+    mock_root.handlers = []
     with patch("kremlin.dialogs.log_viewer.zipfile.ZipFile"), \
+         patch("kremlin.dialogs.log_viewer.logging.getLogger", return_value=mock_root), \
          patch("kremlin.dialogs.log_viewer.Path.mkdir"):
         path = export_log_bundle(str(bundle_path))
         assert path.name == "test_bundle.zip"

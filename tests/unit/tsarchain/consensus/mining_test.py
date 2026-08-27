@@ -245,7 +245,7 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
     post_tx = Mock()
     post_tx.inputs = []
     post_tx.outputs = [
-        Mock(script_pubkey=b'post_script', address=None, amount=0),
+        Mock(script_pubkey=Mock(serialize=lambda: b'post_script'), address=None, amount=0),
         Mock(script_pubkey=None, address=pool_addr, amount=5000000000),
     ]
     post_tx.txid = b'post_tx'
@@ -313,7 +313,7 @@ def test_mine_block_no_mempool(mining_node):
     mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
     mining_node.blockchain.chain[0].height = 0
     mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
-    delattr(mining_node.blockchain, 'get_mempool')
+    mining_node.blockchain.get_mempool.return_value = None
     with patch('tsarchain.consensus.mining.TxPool') as mock_txpool, \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
@@ -398,7 +398,7 @@ def test_mine_block_multiple_graffiti_posts(mining_node):
     post1.txid = b'post1'
     post1.inputs = []
     post1.fee = 10
-    post1.outputs = [Mock(script_pubkey=b'post1_spk', address=None, amount=0), Mock(script_pubkey=None, address=pool_addr1, amount=5000000000)]
+    post1.outputs = [Mock(script_pubkey=Mock(serialize=lambda: b'post1_spk'), address=None, amount=0), Mock(script_pubkey=None, address=pool_addr1, amount=5000000000)]
     post1._received_at = 1
     
     art_id2 = "graf" + "2" * 60
@@ -407,16 +407,17 @@ def test_mine_block_multiple_graffiti_posts(mining_node):
     post2.txid = b'post2'
     post2.inputs = []
     post2.fee = 10
-    post2.outputs = [Mock(script_pubkey=b'post2_spk', address=None, amount=0), Mock(script_pubkey=None, address=pool_addr2, amount=5000000000)]
+    post2.outputs = [Mock(script_pubkey=Mock(serialize=lambda: b'post2_spk'), address=None, amount=0), Mock(script_pubkey=None, address=pool_addr2, amount=5000000000)]
     post2._received_at = 2
     
     mining_node._mempool.get_all_txs.return_value = [post1, post2]
     
     def parse_mock(spk):
-        if spk == b'post1_spk': return {'event': 'POST', 'art_id': art_id1, 'size': 100}
-        if spk == b'post2_spk': return {'event': 'POST', 'art_id': art_id2, 'size': 100}
+        raw = spk.serialize() if callable(getattr(spk, 'serialize', None)) or hasattr(spk, 'serialize') else spk
+        if raw == b'post1_spk' or spk == b'post1_spk': return {'event': 'POST', 'art_id': art_id1, 'size': 100}
+        if raw == b'post2_spk' or spk == b'post2_spk': return {'event': 'POST', 'art_id': art_id2, 'size': 100}
         return None
-        
+    
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script', side_effect=parse_mock), \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
@@ -515,9 +516,59 @@ def test_select_graffiti_art_id_txid_str(mining_node):
     art_id = "graf" + "d" * 60
     pool_addr = GRAFFITI.derive_pool_address(art_id)
     tx = Mock()
-    tx.outputs = [Mock(script_pubkey=b'spk', address=None, amount=0), Mock(script_pubkey=None, address=pool_addr, amount=5000000000)]
+    tx.outputs = [Mock(script_pubkey=Mock(serialize=lambda: b'spk'), address=None, amount=0), Mock(script_pubkey=None, address=pool_addr, amount=5000000000)]
     tx.txid = 'txid_str'
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script') as p:
         p.return_value = {'event': 'POST', 'art_id': art_id, 'size': 100}
         res = mining_node._select_graffiti_art_id([tx])
         assert res == art_id
+
+
+def test_is_graffiti_post_with_real_txout(mining_node):
+    from tsarchain.core.tx import Tx, TxOut
+    from tsarchain.utils.helpers import Script
+    from bech32 import bech32_encode, convertbits
+    from tsarchain.utils import config as CFG
+    creator = bech32_encode(CFG.ADDRESS_PREFIX, [0] + list(convertbits(b"c"*20, 8, 5, True)))
+    storer = bech32_encode(CFG.ADDRESS_PREFIX, [0] + list(convertbits(b"s"*20, 8, 5, True)))
+    meta = GRAFFITI.build_metadata(
+        sha256_hex="a" * 64,
+        size_bytes=100,
+        mime="image/jpeg",
+        storer_addr=storer,
+        receipt_id="rcpt_1",
+        creator_addr=creator,
+    )
+    art_id = GRAFFITI.compute_art_id("a" * 64, creator)
+    pool_addr = GRAFFITI.derive_pool_address(art_id)
+    pool_spk = Script.p2wsh_script(pool_addr)
+    opret_spk = GRAFFITI.build_script(meta)
+    tx = Tx(outputs=[TxOut(0, opret_spk), TxOut(5000000000, pool_spk)])
+    assert mining_node._is_graffiti_post(tx) is True
+
+
+def test_fetch_sorted_mempool_txs_with_real_graffiti_tx(mining_node):
+    from tsarchain.core.tx import Tx, TxOut
+    from tsarchain.utils.helpers import Script
+    from bech32 import bech32_encode, convertbits
+    from tsarchain.utils import config as CFG
+    creator = bech32_encode(CFG.ADDRESS_PREFIX, [0] + list(convertbits(b"c"*20, 8, 5, True)))
+    storer = bech32_encode(CFG.ADDRESS_PREFIX, [0] + list(convertbits(b"s"*20, 8, 5, True)))
+    meta = GRAFFITI.build_metadata(
+        sha256_hex="b" * 64,
+        size_bytes=100,
+        mime="image/jpeg",
+        storer_addr=storer,
+        receipt_id="rcpt_2",
+        creator_addr=creator,
+    )
+    art_id = GRAFFITI.compute_art_id("b" * 64, creator)
+    pool_addr = GRAFFITI.derive_pool_address(art_id)
+    pool_spk = Script.p2wsh_script(pool_addr)
+    opret_spk = GRAFFITI.build_script(meta)
+    graff_tx = Tx(outputs=[TxOut(0, opret_spk), TxOut(5000000000, pool_spk)])
+    normal_tx = Tx(outputs=[TxOut(1000, pool_spk)])
+    mining_node._mempool.get_all_txs.return_value = [normal_tx, graff_tx]
+    sorted_txs = mining_node._fetch_sorted_mempool_txs(mining_node._mempool)
+    assert sorted_txs == [graff_tx, normal_tx]
+

@@ -116,14 +116,20 @@ class ThreadMonitor:
     def _get_thread_state(self, thread: threading.Thread) -> str:
         """Get human-readable thread state"""
         try:
-            if getattr(thread, '_is_stopped', False):
-                return ThreadState.DEAD.value
+            try:
+                if thread._is_stopped:
+                    return ThreadState.DEAD.value
+            except AttributeError:
+                pass
 
             if not thread.is_alive():
                 return ThreadState.DEAD.value
 
-            if getattr(thread, '_waiting', None) is not None:
-                return ThreadState.WAITING.value
+            try:
+                if thread._waiting is not None:
+                    return ThreadState.WAITING.value
+            except AttributeError:
+                pass
 
             return ThreadState.RUNNING.value
 

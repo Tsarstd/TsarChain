@@ -71,5 +71,11 @@ class TxPool(
         self._orphan_pool: Dict[str, dict] = {}
         self._orphan_missing: Dict[str, str] = {}
 
+    def __len__(self) -> int:
+        return len(self._pool)
+
+    def size(self) -> int:
+        return len(self._pool)
+
     def __del__(self):
         self.flush(force=False)

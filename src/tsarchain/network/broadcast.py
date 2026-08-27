@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import threading
+from collections import OrderedDict
 from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from .cast.gossip import GossipHandler
@@ -38,7 +39,7 @@ class Broadcast:
         self.blockchain = blockchain or Blockchain()
         
         shared_utxo = utxodb
-        ensure_utxo = getattr(self.blockchain, "ensure_utxodb", None)
+        ensure_utxo = self.blockchain.ensure_utxodb
         if shared_utxo is None and callable(ensure_utxo):
             shared_utxo = ensure_utxo()
 
@@ -51,7 +52,7 @@ class Broadcast:
         self.seen_txs: Set[str] = set()
         self._processing_blocks: Set[str] = set()
 
-        attach_mp = getattr(self.blockchain, "attach_mempool", None)
+        attach_mp = self.blockchain.attach_mempool
         if callable(attach_mp):
             attach_mp(self.mempool)  # type: ignore[arg-type]
 
@@ -67,21 +68,26 @@ class Broadcast:
         self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
         self._utxo_last_flush_height = -1
         self.dandelion = DandelionPP(self)
-        self._gossip_conn_cache: Dict = {}
+        self._gossip_conn_cache: OrderedDict = OrderedDict()
+        self._gossip_conn_lock = threading.RLock()
 
     def shutdown(self):
         sockets_to_close = []
-        for entry in getattr(self, "_gossip_conn_cache", {}).values():
-            sock = entry.get("sock")
-            if sock:
-                sockets_to_close.append(sock)
+        with self._gossip_conn_lock:
+            conn_cache = self._gossip_conn_cache
+            for entry in conn_cache.values():
+                sock = entry.get("sock")
+                if sock:
+                    sockets_to_close.append(sock)
+            conn_cache.clear()
         for sock in sockets_to_close:
             sock.close()
                     
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
-        bc_shutdown = getattr(self.blockchain, "shutdown", None)
+
+        bc_shutdown = self.blockchain.shutdown
         if callable(bc_shutdown):
             bc_shutdown()
         log.info("[shutdown] Broadcast Shutdown complete")
@@ -92,9 +98,10 @@ class Broadcast:
         self._in_getattr = True
         try:
             for handler in [self.gossip, self.receive, self.mempool_sync, self.utxo_local, self.chain_utils]:
-                val = getattr(handler, name, None)
-                if val is not None:
-                    return val
+                try:
+                    return handler.__getattribute__(name)
+                except AttributeError:
+                    pass
         finally:
             self._in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")

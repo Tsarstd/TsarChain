@@ -118,6 +118,8 @@ class GraffitiRegistry:
         self._kv_prefix = "graffiti:"
         self.store = None
         self._data_cache = None
+        self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
+        self._stored_posts = set()
         default = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
         self.data = self._load(default)
         self.data.setdefault("proofs", {})
@@ -288,7 +290,7 @@ class GraffitiRegistry:
         payouts = (self.data.get("payouts") or {}).get(art_id, [])
         items = [dict(entry) for entry in payouts]
         items.sort(key=lambda r: int(r.get("block_height") or 0), reverse=True)
-        if isinstance(limit, int) and limit > 0:
+        if type(limit) is int and limit > 0:
             return items[:limit]
         return items
 
@@ -304,7 +306,7 @@ class GraffitiRegistry:
             items.append(rec)
         items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
         off = max(0, int(offset or 0))
-        if isinstance(limit, int) and limit > 0:
+        if type(limit) is int and limit > 0:
             return items[off:off + limit]
         return items[off:]
 
@@ -316,7 +318,7 @@ class GraffitiRegistry:
         comments = (self.data.get("comments") or {}).get(art_id, [])
         items = [dict(entry) for entry in comments]
         items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
-        if isinstance(limit, int) and limit > 0:
+        if type(limit) is int and limit > 0:
             return items[:limit]
         return items
 
@@ -360,11 +362,6 @@ class GraffitiRegistry:
 
 
     def _flush(self) -> None:
-        if getattr(self, "_stored_counts", None) is None:
-            self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
-        if getattr(self, "_stored_posts", None) is None:
-            self._stored_posts = set()
-
         with batch("graffiti") as b:
             current_posts = self.data.get("posts") or {}
             for art_id, post in current_posts.items():

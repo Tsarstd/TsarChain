@@ -70,6 +70,11 @@ class DummyTx:
         self._cached_raw_tx_nowit = None
         self._cached_raw_tx_w = None
 
+    def compute_txid(self):
+        if self.txid is None:
+            self.txid = b'\x01' * 32
+        return self.txid
+
 
 class DummyBlock:
     def __init__(self, height, transactions, prev_block_hash=None,

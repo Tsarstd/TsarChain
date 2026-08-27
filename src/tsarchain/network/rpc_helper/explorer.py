@@ -11,7 +11,7 @@ from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ...contracts import graffiti as GRAFF
 from ...utils.benchmarks import benchmark
-from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address
+from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address, extract_script_bytes
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -19,6 +19,10 @@ log = get_ctx_logger("tsarchain.network.user_rpc_helper.explorer")
 
 
 class ExplorerHandler(NetworkHandlerProxy):
+    def __init__(self, network):
+        super().__init__(network)
+        self._block_hash_cache = collections.OrderedDict()
+        self._block_hash_cache_lock = threading.RLock()
 
     @benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
     def process_tx_lookup(self, txid_hex: str, src_tag: str | None = None) -> dict:
@@ -59,8 +63,8 @@ class ExplorerHandler(NetworkHandlerProxy):
     @benchmark(label="GET_BLOCK_HASH", threshold_ms=15.0)
     def handle_get_block_hash(self, height: int) -> dict:
 
-        cache = getattr(self, "_block_hash_cache", None)
-        cache_lock = getattr(self, "_block_hash_cache_lock", None)
+        cache = self._block_hash_cache
+        cache_lock = self._block_hash_cache_lock
         if cache is None or cache_lock is None:
             cache = self._block_hash_cache = collections.OrderedDict()
             cache_lock = self._block_hash_cache_lock = threading.RLock()
@@ -108,15 +112,15 @@ class ExplorerHandler(NetworkHandlerProxy):
             "block_id": self._extract_block_id_from_block(b),
             "hash": self.bhash_hex(b),
             "prev_hash": self._prevhash_hex(b),
-            "height": getattr(b, "height"),
-            "time": getattr(b, "timestamp"),
-            "nonce": getattr(b, "nonce"),
-            "difficulty": getattr(b, "difficulty", None),
-            "version": getattr(b, "version"),
-            "bits": getattr(b, "bits"),
-            "chainwork": getattr(b, "chainwork", None),
+            "height": b.height,
+            "time": b.timestamp,
+            "nonce": b.nonce,
+            "difficulty": b.difficulty,
+            "version": b.version,
+            "bits": b.bits,
+            "chainwork": b.chainwork,
             "size_bytes": estimate_block_size_bytes(b),
-            "merkle_root": self._to_hex_helper(getattr(b, "merkle_root")),
+            "merkle_root": self._to_hex_helper(b.merkle_root),
             "tx": txs,
             "tx_count": len(txs),
             "graffiti": graffiti_posts,
@@ -128,16 +132,16 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def bhash_hex(self, b) -> str:
-        h = getattr(b, "hash", None)
+        h = b.hash
         if callable(h):
             v = h()
-            if isinstance(v, (bytes, bytearray)):
+            if type(v) in (bytes, bytearray):
                 return v.hex()
-            if isinstance(v, str) and len(v) >= 64:
+            if type(v) is str and len(v) >= 64:
                 return v
-        elif isinstance(h, (bytes, bytearray)):
+        elif type(h) in (bytes, bytearray):
             return h.hex()
-        elif isinstance(h, str) and len(h) >= 64:
+        elif type(h) is str and len(h) >= 64:
             return h
         return ""
 
@@ -150,7 +154,8 @@ class ExplorerHandler(NetworkHandlerProxy):
     def _build_tx_inputs(self, tx, opmap: dict) -> tuple[list, int]:
         vin = []
         total_in = 0
-        for tin in (getattr(tx, "inputs", []) or []):
+        inputs = tx.inputs or []
+        for tin in inputs:
             key = self.txin_prevkey(tin)
             amt, spk_hex = opmap.get(key, (None, None))
             if amt is not None:
@@ -166,15 +171,15 @@ class ExplorerHandler(NetworkHandlerProxy):
             })
         return vin, total_in
 
-
     def _build_tx_outputs(self, tx) -> tuple[list, int]:
         vout = []
         total_out = 0
-        for n, o in enumerate(getattr(tx, "outputs", []) or []):
-            amt = int(getattr(o, "amount", 0))
+        outputs = tx.outputs or []
+        for n, o in enumerate(outputs):
+            amt = int(o.amount or 0)
             total_out += amt
             event_info = None
-            spk = getattr(o, "script_pubkey", None)
+            spk = o.script_pubkey
             if spk is not None:
                 meta = GRAFF.parse_from_script(spk)
                 if meta:
@@ -192,19 +197,26 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _calculate_block_bonus(self, height: int, chain: list, opmap: dict) -> int | None:
-        block = next((b for b in chain if int(getattr(b, "height", 0)) == height), None)
+        def _get_h(b):
+            return int(b.height or 0)
+        block = next((b for b in chain if _get_h(b) == height), None)
         if not block:
             return None
             
         total_block_fee = 0
-        for tx_in_block in getattr(block, "transactions", []) or []:
+        txs = block.transactions or []
+        for tx_in_block in txs:
             if self.is_coinbase_tx(tx_in_block):
                 continue
+
+            inputs = tx_in_block.inputs or []
+            outputs = tx_in_block.outputs or []
                 
             tx_total_in = sum(int(opmap.get(self.txin_prevkey(tin), (0, None))[0] or 0)
-                              for tin in getattr(tx_in_block, "inputs", []) or [])
-            tx_total_out = sum(int(getattr(o, "amount", 0))
-                               for o in getattr(tx_in_block, "outputs", []) or [])
+                              for tin in inputs)
+            def _get_amt(o):
+                return int(o.amount or 0)
+            tx_total_out = sum(_get_amt(o) for o in outputs)
             
             tx_fee = tx_total_in - tx_total_out
             if tx_fee > 0:
@@ -214,56 +226,42 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _extract_block_id_from_block(self, b) -> str | None:
-        txs = getattr(b, "transactions", None) or []
+        txs = b.transactions or []
         if not txs:
             return None
 
-        cb = txs[0]
-        if not getattr(cb, "is_coinbase", False):
-            for t in txs:
-                if getattr(t, "is_coinbase", False):
-                    cb = t
-                    break
-            else:
-                return None
-
-        if not getattr(cb, "inputs", None):
+        cb = txs[0] if txs[0].is_coinbase else next((t for t in txs if t.is_coinbase), None)
+        if not cb or not cb.inputs or cb.inputs[0].script_sig is None:
             return None
-        vin0 = cb.inputs[0]
 
-        sig = getattr(vin0, "script_sig", None)
-        ser = getattr(sig, "serialize", None)
-        if callable(ser):
-            raw = ser()
-        elif isinstance(sig, (bytes, bytearray)):
-            raw = bytes(sig)
-        else:
+        raw = extract_script_bytes(cb.inputs[0].script_sig)
+        if not raw:
             return None
 
         data = last_pushdata(raw)
-        if not data:
-            return None
-        return data.decode("utf-8", errors="ignore") or data.hex()
+        return (data.decode("utf-8", errors="ignore") or data.hex()) if data else None
 
 
     def _prevhash_hex(self, b) -> str:
-        v = getattr(b, "prev_block_hash", None)
-        if isinstance(v, (bytes, bytearray)):
+        v = b.prev_block_hash
+        if type(v) in (bytes, bytearray):
             return v.hex()
-        if isinstance(v, str):
+        if type(v) is str:
             return v
         return ""
 
 
     def _serialize_tx_basic(self, tx) -> dict:
         txid = ""
-        tid = getattr(tx, "txid", None)
-        if isinstance(tid, (bytes, bytearray)): txid = tid.hex()
-        elif isinstance(tid, str): txid = tid
-        n_in  = len(getattr(tx, "inputs", []) or [])
+        tid = tx.txid
+        if type(tid) in (bytes, bytearray): txid = tid.hex()
+        elif type(tid) is str: txid = tid
+        inputs = tx.inputs or []
+        n_in = len(inputs)
         vout_list = []
-        for idx, o in enumerate(getattr(tx, "outputs", []) or []):
-            amt = int(getattr(o, "amount", 0))
+        outputs = tx.outputs or []
+        for idx, o in enumerate(outputs):
+            amt = int(o.amount or 0)
             addr = self.txout_to_address(o) or ""
             vout_list.append({"index": idx, "amount": amt, "address": addr})
         
@@ -271,9 +269,9 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _to_hex_helper(self, x):
-        if isinstance(x, (bytes, bytearray)):
+        if type(x) in (bytes, bytearray):
             return x.hex()
-        if isinstance(x, str):
+        if type(x) is str:
             return x
         return None
 
@@ -281,12 +279,16 @@ class ExplorerHandler(NetworkHandlerProxy):
     def _process_block_all_tx(self, b) -> tuple[list, list, list, list]:
         txs, posts, comments, payouts = [], [], [], []
         
-        for tx in getattr(b, "transactions", []) or []:
+        b_txs = b.transactions or []
+        for tx in b_txs:
             txs.append(self._serialize_tx_basic(tx))
-            txid_hex = self._to_hex_helper(getattr(tx, "txid"))
+            t_txid = tx.txid
+            txid_hex = self._to_hex_helper(t_txid)
             
-            for tx_out in getattr(tx, "outputs", []) or []:
-                if not (spk := getattr(tx_out, "script_pubkey", None)):
+            outputs = tx.outputs or []
+            for tx_out in outputs:
+                spk = tx_out.script_pubkey
+                if not spk:
                     continue
                 if not (meta := GRAFF.parse_from_script(spk)):
                     continue
@@ -313,16 +315,20 @@ class ExplorerHandler(NetworkHandlerProxy):
                         "txid": txid_hex,
                         "art_id": meta.get("art_id"),
                         "epoch": meta.get("epoch"),
-                        "recipients": recipients if isinstance(recipients, list) else [],
+                        "recipients": recipients if type(recipients) is list else [],
                     })
         return txs, posts, comments, payouts
 
 
     def _get_mempool_graffiti_count(self) -> int:
         count = 0
-        if mem := getattr(self, "mempool", None):
+        mem = self.broadcast.mempool if self.broadcast else None
+        if mem:
             for tx in mem.get_all_txs():
-                if any(GRAFF.parse_from_script(getattr(tx_out, "script_pubkey", None)) 
-                       for tx_out in getattr(tx, "outputs", []) or []):
+                outputs = tx.outputs or []
+                def _has_graff(tx_out):
+                    spk = tx_out.script_pubkey
+                    return bool(GRAFF.parse_from_script(spk)) if spk else False
+                if any(_has_graff(tx_out) for tx_out in outputs):
                     count += 1
         return count

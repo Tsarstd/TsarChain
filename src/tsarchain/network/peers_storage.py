@@ -36,7 +36,7 @@ def save_peer_keys(keys: Dict[str, str]) -> None:
 
 def load_peer_keys() -> Dict[str, str]:
     rec = _load_record("peer_keys")
-    if isinstance(rec, dict):
+    if type(rec) is dict:
         return {str(k): str(v) for k, v in rec.items()}
     return {}
 

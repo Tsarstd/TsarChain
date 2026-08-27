@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain – see LICENSE
+# Part of TsarChain - see LICENSE
 """
-RPC client for archivist <-> node (storage role) communication.
+RPC client for archivist to node (storage role) communication.
 This channel is used by archivists for handshakes, info, and STOR_* RPCs to nodes/miners.
 """
 
@@ -152,8 +152,9 @@ def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ct
             outer = json.loads(raw.decode("utf-8"))
             if is_envelope(outer):
                 inner = verify_and_unwrap(outer, lambda nid: None)
-                if isinstance(inner, dict) and inner.get("type") == "PONG":
+                if inner.get("type") == "PONG":
                     return True
+
     except Exception as e:
         log.warning("Scan node %s:%s failed: %s", ip, port, e)
     return False
@@ -221,7 +222,7 @@ class RPC:
 
 
     def _send(self, inner: Dict[str, Any]) -> None:
-        sock = getattr(self, "sock", None)
+        sock = self.sock
         if not sock:
             raise RuntimeError("no socket")
         outer = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
@@ -229,7 +230,7 @@ class RPC:
 
 
     def _recv(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        sock = getattr(self, "sock", None)
+        sock = self.sock
         if not sock:
             return None
         raw = recv_message(sock, timeout)
@@ -238,7 +239,7 @@ class RPC:
         outer = json.loads(raw.decode("utf-8"))
         if is_envelope(outer):
             return verify_and_unwrap(outer, lambda nid: None)
-        return outer if isinstance(outer, dict) else None
+        return outer if type(outer) is dict else None
 
 
     def connect(self, ip: str, port: int, my_listen_port: int = 0) -> bool:
@@ -256,7 +257,7 @@ class RPC:
         }
         _ = self.call(hello, timeout=3.0)
         pong = self.call({"type":"PING"}, timeout=3.0)
-        ok = isinstance(pong, dict) and (pong.get("type") == "PONG")
+        ok = pong.get("type") == "PONG"
         if ok:
             log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
         return ok
@@ -283,7 +284,7 @@ class RPC:
                 log.debug("[RPC.call] no response type=%s to %s:%s", inner.get("type"), ip, port)
                 return None
             outer = json.loads(raw.decode("utf-8"))
-            if not isinstance(outer, dict):
+            if type(outer) is not dict:
                 return None
             if is_envelope(outer):
                 return verify_and_unwrap(outer, lambda nid: None)

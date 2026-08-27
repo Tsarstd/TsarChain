@@ -50,10 +50,7 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
         if netloc:
             if ":" in netloc:
                 host_part, port_part = netloc.split(":", 1)
-                try:
-                    port = int(port_part)
-                except Exception:
-                    port = 0
+                port = int(port_part)
             else:
                 host_part = netloc
             host_part = host_part.strip()
@@ -65,11 +62,13 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
                 return host_part, port
     return None
 
+
 def _connect_socket(host: str, port: int, timeout: float) -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(timeout)
     s.connect((host, port))
     return s
+
 
 def _send_storage_request(
     host: str,
@@ -80,6 +79,7 @@ def _send_storage_request(
     identity_hint: str | None = None,
     max_pow_retry: int = 1,
 ) -> Dict[str, Any]:
+
     timeout = timeout or CFG.RPC_TIMEOUT
     if max_len is None:
         max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES)
@@ -97,15 +97,15 @@ def _send_storage_request(
             if not data:
                 return {"status": "error", "reason": "no_response"}
             obj = json.loads(data.decode("utf-8"))
-            if isinstance(obj, dict):
+            if type(obj) is dict:
                 resp = obj
             else:
                 resp = {"status": "error", "reason": "bad_response"}
     except OSError as exc:
         return {"status": "error", "reason": f"connection_failed: {exc}"}
 
-    pow_challenge = resp.get("pow_challenge") if isinstance(resp, dict) else None
-    need_pow = resp.get("reason") in ("pow_required", "rate_limited") if isinstance(resp, dict) else False
+    pow_challenge = resp.get("pow_challenge") if type(resp) is dict else None
+    need_pow = resp.get("reason") in ("pow_required", "rate_limited") if type(resp) is dict else False
     if max_pow_retry > 0 and pow_challenge:
         identity_for_pow = identity_norm or str(pow_challenge.get("identity") or "")
         solution = solve_pow(pow_challenge, identity=identity_for_pow or "anon")
@@ -125,6 +125,7 @@ def _send_storage_request(
             resp["reason"] = "pow_required"
     return resp
 
+
 def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]], limit: Optional[int] = None) -> list[Dict[str, Any]]:
     resp = rpc_call({"type": "STOR_LIST"}) or {}
     storers = resp.get("storers") or resp.get("items") or []
@@ -140,6 +141,7 @@ def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
         return valid[:limit]
     return valid
 
+
 def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -148,6 +150,7 @@ def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
                 break
             h.update(part)
     return h.hexdigest()
+
 
 def _infer_cache_mime(path: str) -> str:
     mime_raw, _ = mimetypes.guess_type(path)
@@ -159,6 +162,7 @@ def _infer_cache_mime(path: str) -> str:
     if ext == ".mp4":
         return "video/mp4"
     return "application/octet-stream"
+
 
 def _find_cached_graffiti_path(art_id: str, cache_root: str) -> Optional[str]:
     if not cache_root or not os.path.isdir(cache_root):
@@ -177,6 +181,7 @@ def _find_cached_graffiti_path(art_id: str, cache_root: str) -> Optional[str]:
     except FileNotFoundError:
         return None
     return None
+
 
 def _read_cached_graffiti_file(art_id: str, cache_root: str) -> Optional[Dict[str, Any]]:
     cache_path = _find_cached_graffiti_path(art_id, cache_root)
@@ -198,6 +203,7 @@ def _read_cached_graffiti_file(art_id: str, cache_root: str) -> Optional[Dict[st
         except OSError:
             return None
     return {"status": "ok", "bytes": data_bytes, "meta": meta, "cache_path": cache_path}
+
 
 @benchmark(label="read_graffiti_file_info", threshold_ms=2.0)
 def read_graffiti_file_info(path: str) -> Dict[str, Any]:
@@ -231,6 +237,7 @@ def read_graffiti_file_info(path: str) -> Dict[str, Any]:
         "merkle_count": mcount,
     }
 
+
 def select_upload_storers(resp: Optional[Dict[str, Any]], *, replication_r: Optional[int] = None) -> list[Dict[str, Any]]:
     """
     Select candidate storage nodes based on metadata and sort by most trusted/recently seen.
@@ -245,6 +252,7 @@ def select_upload_storers(resp: Optional[Dict[str, Any]], *, replication_r: Opti
     usable.sort(key=lambda m: int(m.get("trusted") or 0) * 1_000_000 + int(m.get("last_seen", 0)), reverse=True)
     limit = max(1, int(replication_r if replication_r is not None else CFG.GRAFFITI_REPLICATION_R))
     return usable[:limit]
+
 
 def filter_online_storers(storers: list[Dict[str, Any]], timeout: float = 2.0) -> list[Dict[str, Any]]:
     """
@@ -262,11 +270,12 @@ def filter_online_storers(storers: list[Dict[str, Any]], timeout: float = 2.0) -
             continue
         host, port = endpoint
         try:
-            with _connect_socket(host, port, timeout=timeout):
+            with socket.create_connection((host, port), timeout=timeout):
                 online.append(meta)
         except OSError:
             continue
     return online
+
 
 def build_upload_context(sha256_hex: str, creator_addr: str, *, now_ts: Optional[int] = None) -> Dict[str, str]:
     """
@@ -280,6 +289,7 @@ def build_upload_context(sha256_hex: str, creator_addr: str, *, now_ts: Optional
     gid = f"{sha256_hex}_{ts}"
     receipt_id = f"rcpt_{gid}"
     return {"art_id": art_id, "graffiti_id": gid, "receipt_id": receipt_id}
+
 
 def build_post_plan(
     *,
@@ -336,6 +346,7 @@ def build_post_plan(
         "tsar_fee": tsar_fee,
     }
 
+
 def parse_amount_str(raw: str, default: int) -> int:
     txt = (raw or "").strip()
     if not txt:
@@ -359,6 +370,7 @@ def parse_amount_str(raw: str, default: int) -> int:
         raise ValueError("Jumlah terlalu kecil")
 
     return sats
+
 
 def build_comment_plan(
     *,
@@ -424,6 +436,7 @@ def build_comment_plan(
         "tip_sats": tip_sats,
         "split": split,
     }
+
 
 def upload_graffiti(
     storer_meta: Dict[str, Any],
@@ -521,6 +534,7 @@ def upload_graffiti(
         "sha256": sha_hex,
     }
 
+
 def fetch_graffiti_file(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
     art_id: str,
@@ -530,6 +544,7 @@ def fetch_graffiti_file(
     max_bytes: int = CFG.GRAFFITI_MAX_SIZE_BYTES,
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
+
     art_norm = (art_id or "").strip().lower()
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}
@@ -568,7 +583,7 @@ def fetch_graffiti_file(
         meta_payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": False}
         meta_resp = _send_storage_request(host, port, meta_payload, timeout=max(timeout, 8.0), max_len=msg_cap)
 
-        if not isinstance(meta_resp, dict):
+        if type(meta_resp) is not dict:
             last_error = "bad_response"
             log.warning("[fetch] bad_meta_response art=%s host=%s port=%s meta=%s", art_norm[:16], host, port, meta)
             continue
@@ -604,7 +619,7 @@ def fetch_graffiti_file(
         if total_size <= one_shot_limit:
             payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": True, "max_bytes": min(total_size, data_cap)}
             resp = _send_storage_request(host, port, payload, timeout=max(timeout, 8.0), max_len=msg_cap)
-            if not isinstance(resp, dict):
+            if type(resp) is not dict:
                 last_error = "bad_response"
                 log.warning("[fetch] bad_response art=%s host=%s port=%s meta=%s", art_norm[:16], host, port, meta)
                 continue
@@ -648,7 +663,7 @@ def fetch_graffiti_file(
                         "max_bytes": int(want),
                     }
                     resp = _send_storage_request(host, port, chunk_payload, timeout=dl_timeout, max_len=msg_cap)
-                    if not isinstance(resp, dict):
+                    if type(resp) is not dict:
                         last_error = "bad_response"
                         log.warning("[fetch] bad_chunk_response art=%s host=%s offset=%s", art_norm[:16], host, offset)
                         break

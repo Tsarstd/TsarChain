@@ -236,14 +236,8 @@ def _process_data_retrieval(server, msg: Dict[str, Any], art_id: str, gid: str, 
     max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
 
     chunk_mode = ("offset" in msg) or ("length" in msg)
-    try:
-        offset = int(msg.get("offset", 0) or 0)
-    except Exception:
-        offset = 0
-    try:
-        req_len = int(msg.get("length", 0) or 0)
-    except Exception:
-        req_len = 0
+    offset = int(msg.get("offset", 0) or 0)
+    req_len = int(msg.get("length", 0) or 0)
 
     if offset < 0:
         offset = 0
@@ -295,14 +289,14 @@ def _fetch_kv_data(server, gid: str, art_id: str, offset: int, read_len: int, to
 def _check_mempool_capacity(server) -> Optional[Dict[str, Any]]:
     if int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
         active = 0
-        for meta in (server.index.get("files") or {}).values():
-            if not isinstance(meta, dict):
-                continue
+        items = (server.index.get("files") or {}).values()
+        for meta in items:
             if meta.get("paid"):
                 continue
             state = str(meta.get("state") or "").lower()
             if state in ("receiving", "appending", "pending_confirm") or not meta.get("paid"):
                 active += 1
+
         if active >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
             return {"type": "STOR_ACK", "status": "rejected", "reason": "mempool_graffiti_full"}
     return None

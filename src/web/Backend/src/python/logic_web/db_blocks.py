@@ -34,14 +34,13 @@ def save_blocks_to_storage(blocks: list) -> None:
     if store is None:
         return
     
-    if not isinstance(blocks, list):
+    if not blocks:
         return
     
     max_h = -1
     for block in blocks:
-        if not isinstance(block, dict):
+        if type(block) is not dict:
             continue
-            
         height = block.get("height")
         if height is None:
             continue
@@ -55,12 +54,9 @@ def save_blocks_to_storage(blocks: list) -> None:
             log.warning("[webdb] Failed to save block %s: %s", height, exc)
 
     if max_h >= 0:
-        try:
-            prev_max = get_last_stored_height()
-            if max_h > prev_max:
-                store.put_bytes(WEB_BLOCKS_DB, _meta_max_height_key(), str(max_h).encode("utf-8"))
-        except Exception:
-            pass
+        prev_max = get_last_stored_height()
+        if max_h > prev_max:
+            store.put_bytes(WEB_BLOCKS_DB, _meta_max_height_key(), str(max_h).encode("utf-8"))
 
 
 def get_block_from_storage(height: int) -> Optional[dict]:
@@ -98,7 +94,7 @@ def get_block_range_from_storage(start: int, limit: int) -> dict:
     has_more = next_h >= 0 and len(items) == limit
     
     tip_h = get_last_stored_height()
-    if (tip_h is None or tip_h < 0) and items and isinstance(items[0], dict):
+    if (tip_h is None or tip_h < 0) and items:
         tip_h = items[0].get("height")
 
     return {
@@ -115,7 +111,7 @@ def get_last_stored_height() -> int:
     store = db_cache._open_store()
     if store is None:
         return -1
-    
+
     try:
         meta_raw = store.get_bytes(WEB_BLOCKS_DB, _meta_max_height_key())
         if meta_raw:
@@ -162,6 +158,7 @@ def get_prefetch_last_height() -> int:
     store = db_cache._open_store()
     if store is None:
         return -1
+
     try:
         raw = store.get_bytes(db_cache.WEB_CACHE_DB, _prefetch_last_height_key())
         if raw:
@@ -222,9 +219,12 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
             "limit": blocks_to_fetch
         }) or {}
         
-        if isinstance(resp, dict) and resp.get("error"):
-            log.warning("[webdb] Prefetch failed: %s", resp.get("error"))
-            return False
+        try:
+            if resp.get("error"):
+                log.warning("[webdb] Prefetch failed: %s", resp.get("error"))
+                return False
+        except AttributeError:
+            pass
         
         items = resp.get("items") or []
         if not items:

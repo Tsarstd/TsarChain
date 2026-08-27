@@ -24,6 +24,7 @@ class MockNode:
         self.privkey = "mock_privkey"
         self.peer_pubkeys = {}
         self.node_ctx = {"test": "context"}
+        self._last_p2p_log = 0.0
 
     def get_pinned(self, *args):
         return None

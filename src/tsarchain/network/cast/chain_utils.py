@@ -18,7 +18,7 @@ class ChainUtilsHandler(BroadcastHandlerProxy):
         total = 0
         last_bits = None
         for i, b in enumerate(chain_list):
-            raw = b.get("bits") if isinstance(b, dict) else getattr(b, "bits", None)
+            raw = b.get("bits")
             bits = self._parse_bits(raw)
             if bits is None:
                 bits = CFG.INITIAL_BITS if i == 0 or last_bits is None else last_bits
@@ -54,13 +54,13 @@ class ChainUtilsHandler(BroadcastHandlerProxy):
     def _parse_bits(bits):
         if bits is None:
             return None
-        if isinstance(bits, float):
+        if type(bits) is float:
             if bits.is_integer():
                 return int(bits)
             raise TypeError(f"bits float non-integer: {bits}")
-        if isinstance(bits, int):
+        if type(bits) is int:
             return bits & 0xFFFFFFFF
-        if isinstance(bits, str):
+        if type(bits) is str:
             s = bits.strip().lower()
             return int(s, 16) if s.startswith("0x") else int(s)
         raise TypeError(f"bits must be int/hexstr, got {type(bits)}")

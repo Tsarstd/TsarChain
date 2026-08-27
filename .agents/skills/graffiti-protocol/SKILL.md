@@ -149,14 +149,28 @@ python benchmarks/native_bench.py
 
 ---
 
-## 6. Code Style & Conventions: Strict Prohibition of `hasattr`
+## 6. Code Style & Architectural Conventions: Strict Prohibition of Dynamic Reflection & Defensive Bloat
 
-> [!IMPORTANT]
-> **DO NOT USE `hasattr()` ANYWHERE IN THIS CODEBASE.**
-> The Graffiti Protocol monorepo is strictly clean of `hasattr()`. 
-> - Always prefer direct attribute access, explicit method invocation, or `getattr(obj, "attr_name", default)` when attributes are truly optional.
-> - For callables, use `ser = getattr(obj, "method", None); if callable(ser): ...`.
-> - Do not write defensive shims with `hasattr()`. Trust established data contracts and concrete class implementations across core models (`Block`, `Tx`, `TxIn`, `TxOut`, `GraffitiRegistry`, etc.).
+> [!CAUTION]
+> **TOTAL 100% BAN ON `isinstance()`, `hasattr()`, `getattr()`, AND `setattr()` IN PRODUCTION CODE (`src/` & `apps/`).**
+> The Graffiti Protocol / TsarChain repository strictly enforces clean, explicit, and deterministic code without runtime reflection shims or defensive type checking:
+> 
+> 1. **Zero `isinstance()`**: Strictly prohibited across `src/` and `apps/` (0 occurrences). Never use `isinstance()` for runtime type guards, polymorphism checks, or branching.
+> 2. **Zero `hasattr()`**: Strictly prohibited across the entire codebase (0 occurrences). Never use `hasattr()` as a defensive guard.
+> 3. **Zero `getattr()`**: Strictly prohibited for dynamic property lookups or fallback masking. Never use `getattr(obj, "field", default)` to hide uninitialized attributes or type mismatches. 
+>    - The *only* valid exception is inside low-level proxy dunder definitions (`def __getattr__(self, name)` in proxy wrappers) with re-entrancy protection.
+> 4. **Zero `setattr()`**: Strictly prohibited for dynamic monkey-patching or runtime attribute injection. Always declare class attributes explicitly in `__init__` and assign directly (`obj.attr = value`).
+> 5. **Direct Access**:
+>    - Always prefer direct attribute access: `obj.attr`.
+> 6. **No Scattered `try-except` Bloat / Speculative Guards**:
+>    - Never write multi-line `try-except` blocks around single statements just to guard against `None` or missing attributes (e.g. `try: return len(pool) except Exception: return 0`).
+>    - Do not scatter or duplicate repetitive `try-except` blocks across calling modules (such as `consensus`, `network`, `contracts`, etc.) to handle polymorphic inputs or attribute extraction.
+>    - **Use / Create Centralized Foundation Helpers in `src/tsarchain/utils/helpers.py`**:
+>      - Centralized helpers like `extract_script_bytes(obj)` are provided to safely and recursively extract raw script bytes from diverse polymorphic inputs (`bytes`, hex `str`, `Script`, `TxOut`, `dict`, etc.).
+>      - If a task requires handling new polymorphic structures or attribute extraction that would otherwise require defensive `try-except` scaffolding, **do not duplicate `try-except` across callers**. Instead, create or extend a centralized, reusable helper function in `src/tsarchain/utils/helpers.py`, allowing calling modules to remain concise (a single clean line of delegation without `try-except`).
+>    - Use concise, idiomatic Python:
+>      - Direct null/ternary check: `return len(pool._pool) if pool else 0` or `bc.get_mempool_size() if bc else 0`.
+>      - If specific known exceptions must be ignored, use stdlib `with contextlib.suppress(SpecificError):` instead of verbose defensive scaffolding.
 
 ---
 
@@ -164,7 +178,8 @@ python benchmarks/native_bench.py
 
 Before declaring success or submitting pull requests:
 1. Ensure all Rust unit tests pass (`cargo test` inside `tsarcore_native`).
-2. Ensure all Python unit tests pass (`pytest`).
+2. Ensure all Python unit tests pass (`$env:PYTHONPATH="src"; pytest tests/unit/ -v`).
 3. Verify native extension builds without errors (`maturin develop --release`).
-4. Ensure guarded core consensus files (`src/tsarchain/consensus/`, `src/kremlin/security/`, `tests/`) maintain integrity.
-5. Verify that no `hasattr` usage has been introduced into the codebase.
+4. Ensure guarded core consensus files (`src/tsarchain/consensus/`, `src/kremlin/security/`, `tests/`) maintain architectural integrity.
+5. Verify that **NO `isinstance()`, `hasattr()`, `getattr()`, or `setattr()` calls** have been introduced into `src/` or `apps/`.
+

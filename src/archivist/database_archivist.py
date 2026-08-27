@@ -262,25 +262,27 @@ class ArchivistDatabase:
 
     # ---------------- Payout Guard KV Store Integration ----------------
     def load_payout_guard(self) -> dict:
-        if not self.enable_index or not getattr(self, "_kv_guard", None):
+        try:
+            kv_guard = self._kv_guard
+        except AttributeError:
+            kv_guard = None
+        if not self.enable_index or not kv_guard:
             return dict(self._mem_guard)
         guard: dict = {}
         for k, v in _iter_prefix(self._kv_guard, "guard", b""):
             raw_k = k.decode("utf-8")
             art_id = raw_k[6:] if raw_k.startswith("guard:") else raw_k
-            try:
-                entry = json.loads(v.decode("utf-8"))
-                if isinstance(entry, dict):
-                    epoch = int(entry.get("epoch", -1))
-                    ts = int(entry.get("ts", 0))
-                    status = str(entry.get("status") or "error").lower()
-                    guard[art_id] = {"epoch": epoch, "ts": ts, "status": status}
-            except Exception:
-                pass
+            entry = json.loads(v.decode("utf-8"))
+            if type(entry) is dict:
+                epoch = int(entry.get("epoch", -1))
+                ts = int(entry.get("ts", 0))
+                status = str(entry.get("status") or "error").lower()
+                guard[art_id] = {"epoch": epoch, "ts": ts, "status": status}
         return guard
 
     def save_payout_guard(self, guard_data: dict) -> None:
-        if not self.enable_index or not getattr(self, "_kv_guard", None):
+        kv_guard = self._kv_guard
+        if not self.enable_index or not kv_guard:
             self._mem_guard = dict(guard_data or {})
             return
         ops = []
@@ -290,7 +292,8 @@ class ArchivistDatabase:
             self._kv_guard.put_batch("guard", ops)
 
     def cleanup_expired_payout_guards(self, max_age_seconds: int = 30 * 86400) -> int:
-        if not self.enable_index or not getattr(self, "_kv_guard", None):
+        kv_guard = self._kv_guard
+        if not self.enable_index or not kv_guard:
             return 0
         now = int(time.time())
         cutoff = now - int(max_age_seconds)
@@ -338,6 +341,7 @@ class ArchivistDatabase:
                     init_size = existing
             except OSError:
                 pass
+
         if max_size > 0 and max_size < init_size:
             max_size = init_size
         drive_override = CFG.STORAGE_DRIVE_TYPE
@@ -349,7 +353,11 @@ class ArchivistDatabase:
             pretty_json=False,
             drive_type=drive_override,
         )
-        dt = getattr(store, "drive_type", "unknown")
+        try:
+            dt = store.drive_type
+        except AttributeError:
+            dt = "unknown"
+
         log.info(f"Archivist LMDB storage initialized at '{path}' [Drive Profile: {dt.upper()}]")
         return store
 

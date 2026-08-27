@@ -61,10 +61,14 @@ class NetworkProxy:
                     self.guard_handler,
                 ]
             
+            if name in self.__dict__:
+                return self.__dict__[name]
+
             for handler in self._handlers:
-                val = getattr(handler, name, None)
-                if val is not None:
-                    return val
+                try:
+                    return handler.__getattribute__(name)
+                except AttributeError:
+                    pass
         finally:
             self._in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
@@ -98,9 +102,8 @@ class Network(NetworkProxy):
             "privkey": self.privkey,
         }
         self.peer_pubkeys: dict[str, str] = load_peer_keys()
-        self._peer_keys_lock = getattr(self, "_peer_keys_lock", None)
-        if self._peer_keys_lock is None:
-            self._peer_keys_lock = threading.RLock()
+
+        self._peer_keys_lock = threading.RLock()
 
         self.broadcast = Broadcast(blockchain=blockchain)
         self.broadcast.port = self.port
@@ -140,6 +143,7 @@ class Network(NetworkProxy):
 
         self._sync_event = threading.Event()
         self._sync_fast_until = 0.0
+        self._pending_mempool_pull = False
         self.utxodb = self.broadcast.utxodb
 
         # --- Log throttles to reduce console spam
@@ -278,7 +282,8 @@ class Network(NetworkProxy):
         return None
 
     def _is_self_bootstrap(self, host: str, port: int) -> bool:
-        if int(port) != int(getattr(self, "port", -1)):
+        self_port = self.port
+        if int(port) != int(self_port):
             return False
         return self._is_local_address(host)
 
@@ -313,17 +318,10 @@ class Network(NetworkProxy):
             return False
 
         local_ips: set[str] = {"127.0.0.1", "::1", "0.0.0.0", "::"}
-        try:
-            hn = socket.gethostname()
-            local_ips.update(socket.gethostbyname_ex(hn)[2])
-        except Exception:
-            pass
-
-        try:
-            fqdn = socket.getfqdn()
-            local_ips.update(socket.gethostbyname_ex(fqdn)[2])
-        except Exception:
-            pass
+        hn = socket.gethostname()
+        local_ips.update(socket.gethostbyname_ex(hn)[2])
+        fqdn = socket.getfqdn()
+        local_ips.update(socket.gethostbyname_ex(fqdn)[2])
 
         try:
             for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):

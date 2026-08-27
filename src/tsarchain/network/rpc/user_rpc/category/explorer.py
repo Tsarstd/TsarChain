@@ -55,7 +55,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
     items = {}
     for addr_str in addrs:
         b = self.broadcast.utxodb.get_balance(addr_str, mode="breakdown", current_height=tip_height)
-        if not isinstance(b, dict):
+        if type(b) is not dict:
             b = {"total": int(b or 0), "mature": int(b or 0), "immature": 0}
         pending_out = int(pending_out_map.get(addr_str, 0))
         pending_in = int(incoming_map.get(addr_str, 0))
@@ -97,10 +97,10 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     snap = self.broadcast.blockchain.chain_storage._read_snapshot_state()
     overlay_realtime_mempool_stats(snap, self)
     with self.lock:
-        peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
+        peers_sane = [(ip,p) for (ip,p) in self.peers if type(p) is int and p>0]
         
     snap.setdefault("peers", {})
-    if isinstance(snap["peers"], dict):
+    if type(snap["peers"]) is dict:
         snap["peers"]["count"] = len(peers_sane)
     else:
         snap["peers"] = {"count": len(peers_sane)}
@@ -128,8 +128,12 @@ def get_block(self, message, pow_obj, base_identity,*,
     if not ok:
         return pow_resp
     src_tag = message.get("rpc_source")
-    if "height" in message:
-        return handlers.handle_get_block_at(self, int(message["height"]), src_tag=src_tag)
+    raw_h = message.get("height")
+    if raw_h is not None and str(raw_h).strip() != "":
+        try:
+            return handlers.handle_get_block_at(self, int(raw_h), src_tag=src_tag)
+        except (ValueError, TypeError):
+            return {"type": "BLOCK", "error": "invalid_height"}
     hx = str(message.get("hash") or "").strip()
     if not hx:
         return {"type": "BLOCK", "error": "missing_height_or_hash"}
@@ -159,10 +163,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
 
     raw_start = message.get("start_height", message.get("start"))
     raw_limit = message.get("limit", 200)
-    try:
-        limit = int(raw_limit)
-    except Exception:
-        limit = 200
+    limit = int(raw_limit)
     limit = max(1, min(limit, 500))
 
     with self.broadcast.lock:
@@ -183,10 +184,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
     if raw_start is None or raw_start == "":
         start_height = tip_height
     else:
-        try:
-            start_height = int(raw_start)
-        except Exception:
-            start_height = tip_height
+        start_height = int(raw_start)
 
     if start_height > tip_height:
         start_height = tip_height
@@ -274,11 +272,11 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
     txs = self.broadcast.mempool.get_all_txs()
     hexes = []
     for t in txs:
-        txid = getattr(t, "txid", None)
-        if isinstance(txid, (bytes, bytearray)):
+        txid = t.txid
+        if type(txid) in (bytes, bytearray):
             hexes.append(txid.hex())
-        elif isinstance(txid, str):
-            hexes.append(txid)
+        elif txid:
+            hexes.append(str(txid))
         
     return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
@@ -382,7 +380,7 @@ def get_total_utxo(self, message, pow_obj, base_identity, *,
 
 
 def _validate_balances_request(addrs_raw) -> tuple[list[str], dict | None]:
-    if not isinstance(addrs_raw, list) or not addrs_raw:
+    if type(addrs_raw) is not list or not addrs_raw:
         return [], {"error": "missing addresses"}
     if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
         return [], {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
@@ -406,7 +404,8 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
         spent_local: dict[str, int] = {}
         recv_local: dict[str, int] = {}
 
-        for tin in getattr(tx, "inputs", []) or []:
+        inputs = tx.inputs or []
+        for tin in inputs:
             key = self.txin_prevkey(tin)
             amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
             if not amt_spk:
@@ -416,8 +415,9 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
             if owner and amt:
                 spent_local[owner] = spent_local.get(owner, 0) + int(amt)
 
-        for o in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(o, "amount", 0) or 0)
+        outputs = tx.outputs or []
+        for o in outputs:
+            amt = int(o.amount or 0)
             if amt <= 0:
                 continue
             addr_o = self.txout_to_address(o)
@@ -445,7 +445,7 @@ def _get_mempool_snapshot(self, message, addr, is_miner_sender) -> dict:
         return {"error": "forbidden: miners-only endpoint"}
     peer_port = int(message.get("port", 0))
     target = None
-    if isinstance(addr, tuple):
+    if type(addr) is tuple:
         if peer_port > 0:
             target = self.normalize_peer((addr[0], peer_port))
         if not target:
@@ -465,8 +465,8 @@ def _get_mempool_snapshot(self, message, addr, is_miner_sender) -> dict:
 
 
 def _get_mempool_inline(all_txs) -> dict:
-    inline: list[dict] = []
     total = len(all_txs)
+    inline = []
     hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
     limit = CFG.MEMPOOL_INLINE_MAX_TX
     base = {"type": "MEMPOOL", "mode": "inline_full", "total": total, "txs": []}
@@ -474,17 +474,19 @@ def _get_mempool_inline(all_txs) -> dict:
     for tx in all_txs:
         if len(inline) >= limit:
             break
-        to_dict = getattr(tx, "to_dict", None)
+
+        to_dict = tx.to_dict
         if callable(to_dict):
             tx_dict = to_dict(include_txid=True)
-        elif isinstance(tx, dict):
+        elif type(tx) is dict:
             tx_dict = dict(tx)
         else:
             continue
 
-        if not tx_dict.get("txid") and getattr(tx, "txid", None):
-            txid_attr = getattr(tx, "txid")
-            tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
+        if not tx_dict.get("txid"):
+            txid_attr = tx.txid
+            if txid_attr:
+                tx_dict["txid"] = txid_attr.hex() if type(txid_attr) in (bytes, bytearray) else str(txid_attr)
 
         candidate = dict(base)
         candidate["txs"] = inline + [tx_dict]

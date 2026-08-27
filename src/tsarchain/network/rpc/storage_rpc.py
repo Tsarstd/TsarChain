@@ -34,7 +34,7 @@ def handle_storage_rpc(
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
     
-    ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
+    ip = str(addr[0]) if addr else "0.0.0.0"
     err = _check_storage_rate_limit(self, ip)
     if err: return err
 
@@ -43,7 +43,7 @@ def handle_storage_rpc(
     else:
         peer_port = int(message.get("port", 0))
         with self.lock:
-            peers = dict(getattr(self, "storage_peers", {}) or {})
+            peers = dict(self.storage_peers or {})
         peer_meta = _resolve_storage_sender_meta(self, peers, ip, peer_port, src_node_id, src_pubkey)
 
     if not peer_meta:
@@ -123,7 +123,10 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     if err: return err
     art_id, epoch, offset, length, proof_hash, storer, height, seed = basic_fields
 
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    try:
+        reg = self.broadcast.utxodb._graffiti_registry
+    except AttributeError:
+        reg = None
     if not reg:
         return {"error": "registry_unavailable"}
     post = reg.get_post(art_id)
@@ -144,8 +147,7 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     err = _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset)
     if err: return err
 
-    get_proof_fn = getattr(reg, "get_proof", None)
-    existing = get_proof_fn(art_id, storer, epoch) if callable(get_proof_fn) else None
+    existing = reg.get_proof(art_id, storer, epoch)
     if existing:
         existing_hash = str(existing.get("hash") or "").strip().lower()
         if existing_hash and existing_hash != proof_hash:
@@ -181,13 +183,19 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
 
     fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
     epoch_req = int(message.get("epoch", -1))
-    utxo = getattr(self.broadcast, "utxodb", None)
+    try:
+        utxo = self.broadcast.utxodb
+    except AttributeError:
+        utxo = None
     
     if utxo is None:
         return {"error": "utxo_unavailable"}
     
     utxo._load()
-    reg = getattr(utxo, "_graffiti_registry", None)
+    try:
+        reg = utxo._graffiti_registry
+    except AttributeError:
+        reg = None
     proof_entry = reg.get_latest_proof(art_id, storer_addr) if reg else None
     proof_meta = None
     if proof_entry:
@@ -201,7 +209,7 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
             "storer": proof_entry.get("storer"),
         }
 
-    tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+    tip_height = int(self.broadcast.blockchain.height or 0)
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     
     err, epoch = _validate_payout_epoch(epoch_req, tip_epoch, proof_entry)
@@ -233,7 +241,7 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
 
 
 def _proof_epoch_window(self) -> tuple[int, int, int]:
-    tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+    tip_height = int(self.broadcast.blockchain.height or 0)
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
     return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift
@@ -307,9 +315,9 @@ def _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcoun
         return None
     chunk_b64 = message.get("chunk")
     path = message.get("path")
-    if not isinstance(chunk_b64, str) or not chunk_b64:
+    if type(chunk_b64) is not str or not chunk_b64:
         return {"error": "merkle_chunk_required"}
-    if not isinstance(path, list):
+    if type(path) is not list:
         return {"error": "merkle_path_required"}
     try:
         chunk_bytes = base64.b64decode(chunk_b64.encode("ascii"), validate=True)
@@ -333,17 +341,17 @@ def _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcoun
 
 def _parse_payout_recipients(message, storer_addr):
     recipients = message.get("recipients") or []
-    if isinstance(recipients, dict):
+    if type(recipients) is dict:
         recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
     if not recipients and message.get("recipient") and message.get("amount"):
         amt = int(message.get("amount", 0))
         recipients = [{"addr": str(message.get("recipient")).strip(), "amount": amt}]
-    if not isinstance(recipients, list) or not recipients:
+    if type(recipients) is not list or not recipients:
         return {"error": "bad_recipients"}, None
     if len(recipients) != 1:
         return {"error": "payout_requires_single_recipient"}, None
     
-    rec = recipients[0] if isinstance(recipients[0], dict) else {}
+    rec = recipients[0] if type(recipients[0]) is dict else {}
     rec_addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
     rec_amt = int(rec.get("amount", 0) or 0)
     
@@ -380,10 +388,14 @@ def _check_payout_cooldown(self, art_id, storer_addr):
         now = int(time.time())
         guard_key = f"{art_id}:{storer_addr}"
         with self.lock:
-            guard = getattr(self, "_payout_guard", None)
+            try:
+                guard = self._payout_guard
+            except AttributeError:
+                self._payout_guard = {}
+                guard = self._payout_guard
             if guard is None:
-                guard = {}
-                setattr(self, "_payout_guard", guard)
+                self._payout_guard = {}
+                guard = self._payout_guard
             last_ts = int(guard.get(guard_key, 0) or 0)
             if last_ts and (now - last_ts) < cooldown:
                 return {

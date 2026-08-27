@@ -248,6 +248,23 @@ class TestGetBlock:
             result = get_block(mock_self, {"height": 1}, None, None, client_ip="1.2.3.4")
             assert result == {"error": "pow"}
 
+    def test_by_height_str(self, mock_self, mock_pow_allow, mock_handlers):
+        msg = {"height": "42"}
+        result = get_block(mock_self, msg, None, None, client_ip="1.2.3.4")
+        mock_handlers.handle_get_block_at.assert_called_once_with(mock_self, 42, src_tag=None)
+        assert result == {"type": "BLOCK", "height": 100}
+
+    def test_by_height_invalid(self, mock_self, mock_pow_allow, mock_handlers):
+        msg = {"height": "invalid_height"}
+        result = get_block(mock_self, msg, None, None, client_ip="1.2.3.4")
+        assert result == {"type": "BLOCK", "error": "invalid_height"}
+
+    def test_by_height_none_with_hash(self, mock_self, mock_pow_allow, mock_handlers):
+        msg = {"height": None, "hash": "deadbeef"}
+        result = get_block(mock_self, msg, None, None, client_ip="1.2.3.4")
+        mock_handlers.handle_get_block_by_hash.assert_called_once_with(mock_self, "deadbeef", src_tag=None)
+        assert result == {"type": "BLOCK", "hash": "abc"}
+
 
 class TestGetBlockRange:
     def test_default_start_tip(self, mock_self, mock_pow_allow, mock_summarize_block):

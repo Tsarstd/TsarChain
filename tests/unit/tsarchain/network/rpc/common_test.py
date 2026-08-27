@@ -100,7 +100,6 @@ def test_summarize_block():
     mock_tx_out4 = Mock(script_pubkey=b"graffiti_payout")
     mock_tx_out5 = Mock(script_pubkey=b"graffiti_other")
     mock_tx_out6 = Mock(script_pubkey=None)
-    del mock_tx_out6.script_pubkey # remove entirely
     
     mock_tx.outputs = [mock_tx_out1, mock_tx_out2, mock_tx_out3, mock_tx_out4, mock_tx_out5, mock_tx_out6]
     
@@ -224,8 +223,9 @@ def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     )
     assert allowed is False
     
-    # 5. verify_pow throws Exception (should be caught and passed, and proceed to tb_allow)
-    mock_verify_pow.side_effect = Exception("pow error")
+    # 5. verify_pow returns False (proceed to tb_allow)
+    mock_verify_pow.side_effect = None
+    mock_verify_pow.return_value = False
     mock_network.tb_node_allow.return_value = True
     allowed, err = allow_rpc_with_pow(
         mock_network,

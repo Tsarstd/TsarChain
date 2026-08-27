@@ -38,29 +38,40 @@ class TxSearch:
             b = None
             if callable(get_block):
                 b = get_block(hx)
-            if isinstance(b, dict) and b and not b.get("error") and (b.get("hash") or b.get("transactions") or b.get("tx")):
-                done = True
-                self.panel._ui(self.panel.block_search.render_block, b)
-                self.panel._ui(self.panel._finish_search, True)
-                return
+            if b:
+                try:
+                    if not b.get("error") and (b.get("hash") or b.get("transactions") or b.get("tx")):
+                        done = True
+                        self.panel._ui(self.panel.block_search.render_block, b)
+                        self.panel._ui(self.panel._finish_search, True)
+                        return
+                except AttributeError:
+                    pass
 
             if callable(get_tx):
                 t = get_tx(hx)
-                if isinstance(t, dict) and not t.get("error"):
-                    if "tx" in t and isinstance(t["tx"], dict):
-                        t = t["tx"]
-                    elif "transaction" in t and isinstance(t["transaction"], dict):
-                        t = t["transaction"]
-                    if "inputs" not in t and "vin" in t:
-                        t["inputs"] = t.get("vin") or []
-                    if "outputs" not in t and "vout" in t:
-                        t["outputs"] = t.get("vout") or []
+                if t:
+                    try:
+                        if not t.get("error"):
+                            tx_inner = t.get("tx")
+                            if tx_inner and type(tx_inner) is dict:
+                                t = tx_inner
+                            else:
+                                tx_inner2 = t.get("transaction")
+                                if tx_inner2 and type(tx_inner2) is dict:
+                                    t = tx_inner2
+                            if "inputs" not in t and "vin" in t:
+                                t["inputs"] = t.get("vin") or []
+                            if "outputs" not in t and "vout" in t:
+                                t["outputs"] = t.get("vout") or []
 
-                    txid_disp = t.get("txid") or t.get("id") or t.get("hash") or hx
-                    done = True
-                    self.panel._ui(self.render_tx, txid_disp, t)
-                    self.panel._ui(self.panel._finish_search, True)
-                    return
+                            txid_disp = t.get("txid") or t.get("id") or t.get("hash") or hx
+                            done = True
+                            self.panel._ui(self.render_tx, txid_disp, t)
+                            self.panel._ui(self.panel._finish_search, True)
+                            return
+                    except AttributeError:
+                        pass
 
             self.panel._ui(self.panel._render_error, "Not found")
             self.panel._ui(self.panel._finish_search, done)

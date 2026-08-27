@@ -66,7 +66,7 @@ def encrypt_blob(blob: bytes, password: str) -> Dict:
     
 def create_keypair(path: str = "") -> tuple[str, str, str]:
     existing = load_user_key_record()
-    if isinstance(existing, dict) and existing.get("id") and existing.get("pubkey") and existing.get("privkey"):
+    if type(existing) is dict and existing.get("id") and existing.get("pubkey") and existing.get("privkey"):
         return str(existing["id"]), str(existing["pubkey"]), str(existing["privkey"])
 
     sk = SigningKey.generate()
@@ -110,18 +110,12 @@ def _secure_backend_write(namespace: str, key: str, path: Optional[Path] = None,
     data = json.dumps(payload, separators=CFG.CANONICAL_SEP)
     kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
     if path is not None and path.exists():
-        try:
-            path.unlink()
-        except OSError:
-            pass
+        path.unlink()
 
 def _secure_backend_delete(namespace: str, key: str, path: Optional[Path] = None) -> None:
     kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
     if path is not None and path.exists():
-        try:
-            path.unlink()
-        except OSError:
-            pass
+        path.unlink()
 
 def _get_app_secret_password() -> str:
     global _APP_SECRET_CACHE
@@ -130,7 +124,7 @@ def _get_app_secret_password() -> str:
             return _APP_SECRET_CACHE
         record, _ = _secure_backend_read("app_secret", "global", None)
         secret_hex: Optional[str] = None
-        if isinstance(record, dict):
+        if type(record) is dict:
             secret_hex = str(record.get("secret") or "") or None
         if not secret_hex:
             secret_hex = os.urandom(32).hex()
@@ -176,7 +170,7 @@ def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, pa
 def load_chat_state(default: Optional[Dict] = None) -> Dict:
     fallback = default or {"blocked": [], "pubcache": {}, "textsize": "Medium", "history": {}, "verified": {}}
     try:
-        data, legacy = _secure_load("chat_state", "default", None, _app_secret_provider, "Load chat state")
+        data, _ = _secure_load("chat_state", "default", None, _app_secret_provider, "Load chat state")
     except Exception:
         log.exception("Failed to load chat state; falling back to default")
         return fallback.copy()
@@ -205,8 +199,8 @@ def load_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
     data, _ = _secure_load("wallet_registry", "default", None, _app_secret_provider, "Load wallet registry")
     if data is None:
         return fallback
-    wallets = data.get("wallets") if isinstance(data, dict) else None
-    if not isinstance(wallets, list):
+    wallets = data.get("wallets") if type(data) is dict else None
+    if type(wallets) is not list:
         return fallback
     seen: List[str] = []
     for addr in wallets:
@@ -362,7 +356,7 @@ def load_keystore(password: str) -> dict:
     raw = _read_file_bytes(WALLET_FILE)
     root = decrypt_wallet_file(raw, password)
     if root.get("version") == KEYSTORE_VERSION and "wallets" in root:
-        if "contacts" not in root or not isinstance(root["contacts"], dict):
+        if "contacts" not in root or type(root["contacts"]) is not dict:
             root["contacts"] = {}
         if ks_default := root.get("default"):
             if ks_default not in root["wallets"]:
@@ -415,7 +409,7 @@ def upsert_contact_in_keystore(address: str, alias: str, password: str) -> bool:
         raise ValueError("alias required")
 
     ks = load_keystore(password)
-    if "contacts" not in ks or not isinstance(ks["contacts"], dict):
+    if "contacts" not in ks or type(ks["contacts"]) is not dict:
         ks["contacts"] = {}
     now = int(time.time())
     prev = ks["contacts"].get(addr) or {}
@@ -494,7 +488,7 @@ def _load_cache_raw(address: str) -> dict:
         return {"version": 1, "address": address, "last_updated": 0, "items": {}}
     with open(path, "r", encoding="utf-8") as f:
         root = json.load(f)
-    if not isinstance(root.get("items"), dict):
+    if type(root.get("items")) is not dict:
         root["items"] = {}
     return root
 
@@ -570,11 +564,11 @@ class Security:
     
     @staticmethod
     def secure_erase(data):
-        if isinstance(data, str):
+        if type(data) is str:
             encoded = data.encode("utf-8")
             return b"\x00" * len(encoded)
-        elif isinstance(data, (bytes, bytearray)):
-            if isinstance(data, bytearray):
+        elif type(data) in (bytes, bytearray):
+            if type(data) is bytearray:
                 for i in range(len(data)):
                     data[i] = 0
             return b"\x00" * len(data)
@@ -743,7 +737,7 @@ class Wallet:
         def _sort_key(x):
             conf = 1 if x.get("status") == "confirmed" else 0
             h = x.get("height")
-            h_sort = (h if isinstance(h, int) else -1)
+            h_sort = (h if type(h) is int else -1)
             return (conf, h_sort, x.get("last_seen", 0))
         items.sort(key=_sort_key, reverse=True)
 

@@ -3,7 +3,6 @@
 # Part of TsarChain — see LICENSE
 # Refs: RFC7748-X25519; RFC5869-HKDF; NIST-800-38D-AES-GCM
 
-import os
 import time
 import json
 import errno
@@ -59,7 +58,15 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
             _SEND_DISCONNECT_COUNT += 1
             now = time.time()
             if now - _SEND_DISCONNECT_LAST >= _SEND_DISCONNECT_WINDOW:
-                log.debug("[send_message] peer closed during send (%s) count=%d", getattr(e, "winerror", getattr(e, "errno", e)), _SEND_DISCONNECT_COUNT)
+                err_code = e
+                try:
+                    if e.winerror is not None:
+                        err_code = e.winerror
+                    elif e.errno is not None:
+                        err_code = e.errno
+                except AttributeError:
+                    pass
+                log.debug("[send_message] peer closed during send (%s) count=%d", err_code, _SEND_DISCONNECT_COUNT)
                 _SEND_DISCONNECT_LAST = now
                 _SEND_DISCONNECT_COUNT = 0
             return
@@ -114,7 +121,7 @@ def load_or_create_keypair_at(name_or_path: str = "node_key") -> tuple[str, str,
 
 
 def is_envelope(obj: dict) -> bool:
-    return isinstance(obj, dict) and \
+    return type(obj) is dict and \
            "net_id" in obj and "from" in obj and "msg" in obj and \
            "sig" in obj and "ts" in obj and "nonce" in obj
 
@@ -141,7 +148,7 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     if net_id != CFG.DEFAULT_NET_ID:
         raise ValueError("wrong network id")
     ts_val = envelope.get("ts")
-    if not isinstance(ts_val, int) or abs(int(time.time()) - ts_val) > CFG.REPLAY_WINDOW_SEC:
+    if type(ts_val) is not int or abs(int(time.time()) - ts_val) > CFG.REPLAY_WINDOW_SEC:
         raise ValueError("timestamp window violation")
     if not envelope.get("nonce"):
         raise ValueError("missing nonce")
@@ -151,7 +158,7 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     if not node_id:
         raise ValueError("missing node_id")
     inner = envelope.get("msg")
-    if not isinstance(inner, dict):
+    if type(inner) is not dict:
         raise ValueError("missing msg")
     to_sign = _canonical_dumps({"msg": inner, "ts": ts_val, "nonce": envelope["nonce"], "from": node_id})
     pub = None
@@ -189,12 +196,19 @@ def _nonce_total_entries() -> int:
 
 
 def _is_disconnect_exc(e: BaseException) -> bool:
-    if isinstance(e, (ConnectionError, ConnectionResetError, ConnectionAbortedError, TimeoutError, socket.timeout, BrokenPipeError)):
-        return True
-    if isinstance(e, OSError):
-        code = getattr(e, "errno", None)
-        w    = getattr(e, "winerror", None)
-        return (code in POSIX_DISCONNECT) or (w in WIN_DISCONNECT)
+    if issubclass(type(e), (OSError, socket.timeout)):
+        try:
+            code = e.errno
+        except AttributeError:
+            code = None
+        try:
+            w = e.winerror
+        except AttributeError:
+            w = None
+        if (code in POSIX_DISCONNECT) or (w in WIN_DISCONNECT):
+            return True
+        if issubclass(type(e), (ConnectionError, TimeoutError, socket.timeout)):
+            return True
     return False
 
 
@@ -374,10 +388,10 @@ class SecureChannel:
         if obj.get("type") != "P2P_DATA":
             raise ValueError("expecting P2P_DATA")
         seq = obj.get("seq")
-        if not isinstance(seq, int):
+        if type(seq) is not int:
             raise ValueError("missing seq")
         ct_hex = obj.get("ct")
-        if not isinstance(ct_hex, str):
+        if type(ct_hex) is not str:
             raise ValueError("missing ct")
         pt = self.native.decrypt(seq, bytes.fromhex(ct_hex))
         return bytes(pt)

@@ -42,8 +42,9 @@ class StorageServer:
         self.thread.start()
 
     def _normalize_file_meta(self, aid: str, meta: dict) -> dict:
-        if not isinstance(meta, dict):
+        if not meta:
             return {}
+
         meta.setdefault("paid", False)
         meta.setdefault("expire_at_height", 0)
         meta.setdefault("confirmed_at_height", 0)
@@ -240,25 +241,28 @@ class StorageServer:
                                 promoted = True
                             except OSError:
                                 pass
+
                 if data is not None:
                     self.db.put_final(aid, data)
                     promoted = True
+
             if not promoted and not self.db.has_final(aid):
                 return False, "missing_file"
+
         self.db.delete_blob(aid, incoming=True)
         blob_p = self.db.get_final_blob_path(aid)
-        if blob_p and isinstance(blob_p, str):
+        if blob_p and type(blob_p) is str:
             meta["path"] = os.path.normpath(blob_p).replace("\\", "/")
         else:
             meta["path"] = f"lmdb://final/{aid}"
         meta["state"] = "stored"
         return True, None
 
+
     def _find_expired_keys(self, files: dict, tip_h: int, expire_after: int) -> list[str]:
         remove_keys = []
-        for gid, meta in files.items():
-            if not isinstance(meta, dict):
-                continue
+        items = files.items()
+        for gid, meta in items:
             if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
                 expire_h = int(meta.get("expire_at_height", 0) or 0)
                 if expire_h <= 0:
@@ -267,6 +271,7 @@ class StorageServer:
             expire_h = int(meta.get("expire_at_height", 0) or 0)
             if expire_h and tip_h and expire_h <= tip_h and not meta.get("paid"):
                 remove_keys.append(gid)
+
         return remove_keys
 
     def _remove_expired_files(self, files: dict, remove_keys: list[str]) -> int:
@@ -308,13 +313,13 @@ class StorageServer:
         cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
         raw = json.dumps(obj).encode("utf-8")
         if len(raw) + len(CFG.NETWORK_MAGIC) > cap:
-            t = obj.get("type") if isinstance(obj, dict) else "unknown"
+            t = obj.get("type") or "unknown"
             obj = {"type": t, "status": "error", "reason": "msg_too_large"}
             raw = json.dumps(obj).encode("utf-8")
         send_message(conn, raw, max_len=cap)
 
     def _client_ip(self, addr) -> str:
-        if isinstance(addr, tuple) and addr:
+        if addr:
             return str(addr[0])
         return "0.0.0.0"
 
@@ -365,12 +370,14 @@ class StorageServer:
             msg = verify_and_unwrap(outer, lambda nid: None)
             identity = str(outer.get("from") or "").strip().lower() or None
         else:
-            msg = outer if isinstance(outer, dict) else {}
+            msg = outer if type(outer) is dict else {}
+
         wallet_ident = str(msg.get("wallet_addr") or msg.get("creator_addr") or "").strip().lower()
         node_ident = str(msg.get("node_id") or "").strip().lower()
         identity = wallet_ident or identity or node_ident or None
-        mtype = str(msg.get("type", "")).strip().upper() if isinstance(msg, dict) else ""
-        pow_obj = msg.get("pow") if isinstance(msg, dict) else None
+        mtype = str(msg.get("type", "")).strip().upper()
+        pow_obj = msg.get("pow")
+
         return msg, mtype, identity, pow_obj
 
     def _enforce_guard(self, conn, ip: str, mtype: str, decision: dict) -> bool:

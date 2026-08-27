@@ -408,11 +408,18 @@ class ExplorePanel(tk.Frame):
 
     def _bind_mousewheel_forward(self, widget):
         def _forward(event):
-            delta = getattr(event, "delta", 0)
+            try:
+                delta = int(event.delta or 0)
+            except (AttributeError, TypeError, ValueError):
+                delta = 0
             if delta != 0:
                 self.text.yview_scroll(-int(delta / 120), "units")
             else:
-                step = 1 if getattr(event, "num", 0) == 5 else -1
+                try:
+                    num = event.num
+                except AttributeError:
+                    num = 0
+                step = 1 if num == 5 else -1
                 self.text.yview_scroll(step, "units")
             return "break"
 
@@ -523,7 +530,10 @@ class ExplorePanel(tk.Frame):
         tip = info.get("tip") or info.get("best_hash") or "-"
         self._kv("Tip", _short(tip, 12), mono=True, vtag="val_hex")
         peers = info.get("peers") or info.get("peer_list") or []
-        peers_n = peers if isinstance(peers, int) else len(peers)
+        try:
+            peers_n = len(peers)
+        except TypeError:
+            peers_n = int(peers)
         self._kv("Peers", str(peers_n), mono=True, vtag="val_num")
         mem = info.get("mempool_count") or info.get("txpool_size") or info.get("mempool")
         self._kv("Mempool", str(mem), mono=True, vtag="val_num")
@@ -601,7 +611,11 @@ class ExplorePanel(tk.Frame):
         self._finish_render("Explore ready.")
 
     def _enter_compact(self):
-        if not getattr(self, "hero_mode", False):
+        try:
+            hero_mode = self.hero_mode
+        except AttributeError:
+            hero_mode = False
+        if not hero_mode:
             return
         self.hero_mode = False
         for w in (self._hero_top_spacer, self._hero_bottom_spacer):

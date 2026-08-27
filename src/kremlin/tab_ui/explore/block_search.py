@@ -37,7 +37,7 @@ class BlockSearch:
             done = False
             try:
                 b = get_block(idx)
-                if not b or (isinstance(b, dict) and b.get("error")):
+                if not b or b.get("error"):
                     self.panel._ui(self.panel._render_error, "Block not found")
                 else:
                     done = True
@@ -51,12 +51,12 @@ class BlockSearch:
     def render_block(self, b: Dict) -> None:
         p = self.panel
         p._clear_text()
-        meta = b.get("_meta") if isinstance(b, dict) else {}
+        meta = b.get("_meta") or {}
 
         def _pick(*keys):
             for k in keys:
-                v = b.get(k) if isinstance(b, dict) else None
-                if v is None and isinstance(meta, dict):
+                v = b.get(k)
+                if v is None:
                     v = meta.get(k)
                 if v not in (None, ""):
                     return v
@@ -132,7 +132,8 @@ class BlockSearch:
         # Graffiti / comments
         graff = b.get("graffiti")
         comments = b.get("comments")
-        payouts = b.get("payouts") or (meta.get("payouts") if isinstance(meta, dict) else []) or []
+        meta_payouts = meta.get("payouts")
+        payouts = b.get("payouts") or meta_payouts or []
         if graff or comments or payouts:
             p._section("Graffiti Activity")
             if graff:
@@ -158,10 +159,6 @@ class BlockSearch:
                     art_id = pay.get("art_id") or "-"
                     epoch = pay.get("epoch")    
                     recipients = pay.get("recipients") or pay.get("addre") or []
-                    if isinstance(recipients, dict):
-                        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
-                    elif not isinstance(recipients, list):
-                        recipients = [recipients] if recipients else []
                     p._kv("TxID", str(pay.get("txid") or "-"), mono=True, vtag="val_hex")
                     p._kv("Art ID", str(art_id or "-"), mono=True, vtag="val_hex")
                     p._kv("Epoch", str(epoch or "-"), mono=True, vtag="val_num")
@@ -170,12 +167,8 @@ class BlockSearch:
                         p._writeln("  -", "mono", "muted")
                     else:
                         for rec in recipients:
-                            if isinstance(rec, dict):
-                                addr = (rec.get("addr") or rec.get("address") or "").strip()
-                                amt = rec.get("amount")
-                            else:
-                                addr = str(rec or "").strip()
-                                amt = None
+                            addr = (rec.get("addr") or rec.get("address") or "").strip()
+                            amt = rec.get("amount")
                             addr_tags = ("mono", "val_addr") if addr else ("mono", "muted")
                             p.text.insert("end", "  - ", ("mono",))
                             p.text.insert("end", addr or "-", addr_tags)
@@ -189,13 +182,10 @@ class BlockSearch:
             p._writeln("No transactions.", "muted")
         else:
             for t in txs:
-                if isinstance(t, dict):
-                    txid = t.get("txid") or t.get("id") or t.get("hash") or "-"
-                    vin = len((t.get("inputs") or t.get("vin") or []) or [])
-                    vout = len((t.get("outputs") or t.get("vout") or []) or [])
-                else:
-                    txid = str(t)
-                    vin = vout = 0
+                txid = t.get("txid") or t.get("id") or t.get("hash") or "-"
+                vin = len((t.get("inputs") or t.get("vin") or []) or [])
+                vout = len((t.get("outputs") or t.get("vout") or []) or [])
+
                 p.text.insert("end", "- ", ("mono",))
                 p.text.insert("end", txid, ("mono", "val_hex"))
                 p.text.insert("end", f"   ({vin} → {vout})\n", ("mono",))

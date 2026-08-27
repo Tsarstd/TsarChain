@@ -10,7 +10,6 @@ import collections
 from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ...contracts import graffiti as GRAFF
-from ...utils.benchmarks import benchmark
 from ...utils.helpers import spkhex_to_address
 
 # ---------------- Logger ----------------
@@ -19,13 +18,18 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.history")
 
 
 class HistoryHandler(NetworkHandlerProxy):
+    def __init__(self, network):
+        super().__init__(network)
+        self._tx_history_cache = collections.OrderedDict()
+        self._tx_history_cache_lock = threading.RLock()
+
     def process_history_lookup(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
         addr, target_spk_hex, err_result = self._validate_history_params(address, limit, offset)
         if err_result:
             return err_result
 
-        mempool = getattr(self.broadcast, "mempool", None)
-        mem_seq = getattr(mempool, "change_seq", 0)
+        mempool = self.broadcast.mempool
+        mem_seq = mempool.change_seq
 
         with self.broadcast.lock:
             chain_ref = self.broadcast.blockchain.chain
@@ -42,7 +46,7 @@ class HistoryHandler(NetworkHandlerProxy):
             mem = self.broadcast.mempool.get_all_txs()
 
         tip_hash = self.bhash_hex(chain[-1]) if chain else ""
-        mem_seq = getattr(mempool, "change_seq", mem_seq)
+        mem_seq = mempool.change_seq
 
         opmap_chain, opmap_mem = self.build_outpoint_map(chain, mem)
         items = []
@@ -53,9 +57,10 @@ class HistoryHandler(NetworkHandlerProxy):
                 items.append(item)
 
         for b in chain:
-            h = int(getattr(b, "height", 0))
-            block_timestamp = int(getattr(b, "timestamp", 0))
-            for tx in getattr(b, "transactions", []) or []:
+            h = int(b.height or 0)
+            block_timestamp = int(b.timestamp or 0)
+            txs = b.transactions or []
+            for tx in txs:
                 item = self._extract_tx_history_item(tx, "chain", h, block_timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height)
                 if item:
                     items.append(item)
@@ -67,9 +72,9 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _txid_hex_helper(self, tid) -> str:
-        if isinstance(tid, (bytes, bytearray)):
+        if type(tid) in (bytes, bytearray):
             return tid.hex().lower()
-        if isinstance(tid, str):
+        if type(tid) is str:
             return tid.strip().lower()
         return ""
 
@@ -81,14 +86,17 @@ class HistoryHandler(NetworkHandlerProxy):
             tip_height = int(self.broadcast.blockchain.height)
             mem = self.broadcast.mempool.get_all_txs()
         for tx in mem:
-            txid = self._txid_hex_helper(getattr(tx, "txid", None))
+            txid_val = tx.txid
+            txid = self._txid_hex_helper(txid_val)
             if txid == target:
                 return ("mempool", tx, None, 0, None, chain, mem, tip_height)
         for b in chain:
-            h = int(getattr(b, "height", 0))
-            timestamp = int(getattr(b, "timestamp", 0))
-            for tx in getattr(b, "transactions", []) or []:
-                txid = self._txid_hex_helper(getattr(tx, "txid", None))
+            h = int(b.height or 0)
+            timestamp = int(b.timestamp or 0)
+            txs = b.transactions or []
+            for tx in txs:
+                txid_val = tx.txid
+                txid = self._txid_hex_helper(txid_val)
                 if txid == target:
                     conf = max(0, tip_height - h + 1)
                     return ("chain", tx, h, timestamp, conf, chain, mem, tip_height)
@@ -97,35 +105,36 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def txin_prevkey(self, tin) -> str:
-        txid = getattr(tin, "txid", None)
-        if isinstance(txid, (bytes, bytearray)):
+        txid = tin.txid
+        if type(txid) in (bytes, bytearray):
             ptx = txid.hex()
-        elif isinstance(txid, str) and len(txid) >= 64:
+        elif type(txid) is str and len(txid) >= 64:
             ptx = txid
         else:
-            p0 = getattr(tin, "prev_tx", b"")
-            if isinstance(p0, (bytes, bytearray)):
+            p0 = tin.prev_tx
+            if type(p0) in (bytes, bytearray):
                 ptx = p0.hex()
             else:
                 ptx = str(p0 or "")
-        idx = getattr(tin, "vout", getattr(tin, "prev_index", 0))
-        idx = int(idx)
+
+        idx = tin.vout
+        idx = int(idx or 0)
         return f"{ptx}:{idx}"
 
 
     def is_coinbase_tx(self, tx) -> bool:
-        ins = getattr(tx, "inputs", []) or []
+        ins = tx.inputs or []
         if len(ins) == 0:
             return True
         first = ins[0]
-        p0 = getattr(first, "txid", None)
-        if isinstance(p0, (bytes, bytearray)):
+        p0 = first.txid
+        if type(p0) in (bytes, bytearray):
             b = p0
-        elif isinstance(p0, str) and len(p0) == 64:
+        elif type(p0) is str and len(p0) == 64:
             b = bytes.fromhex(p0)
         else:
-            b = getattr(first, "prev_tx", b"")
-            if not isinstance(b, (bytes, bytearray)):
+            b = first.prev_tx
+            if type(b) not in (bytes, bytearray):
                 b = b""
         return b == b"\x00" * 32
 
@@ -140,20 +149,24 @@ class HistoryHandler(NetworkHandlerProxy):
     def build_outpoint_map(self, chain, mem=None):
         chain_map: dict[str, tuple[int, str]] = {}
         for b in chain:
-            txs = getattr(b, "transactions", []) or []
+            txs = b.transactions or []
             for tx in txs:
-                txid = self._txid_hex_helper(getattr(tx, "txid", None))
-                for idx, o in enumerate(getattr(tx, "outputs", []) or []):
-                    amount = int(getattr(o, "amount", 0))
+                txid_val = tx.txid
+                txid = self._txid_hex_helper(txid_val)
+                outputs = tx.outputs or []
+                for idx, o in enumerate(outputs):
+                    amount = int(o.amount or 0)
                     spk_hex = self._txout_to_spk_hex(o) or ""
                     chain_map[f"{txid}:{idx}"] = (amount, spk_hex)
         if mem is None:
             return chain_map
         mem_map: dict[str, tuple[int, str]] = {}
         for tx in mem:
-            txid = self._txid_hex_helper(getattr(tx, "txid", None))
-            for idx, o in enumerate(getattr(tx, "outputs", []) or []):
-                amount = int(getattr(o, "amount", 0))
+            txid_val = tx.txid
+            txid = self._txid_hex_helper(txid_val)
+            outputs = tx.outputs or []
+            for idx, o in enumerate(outputs):
+                amount = int(o.amount or 0)
                 spk_hex = self._txout_to_spk_hex(o) or ""
                 mem_map[f"{txid}:{idx}"] = (amount, spk_hex)
         return chain_map, mem_map
@@ -165,7 +178,7 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _validate_history_params(self, address: str, limit: int, offset: int) -> tuple[str, str | None, dict | None]:
-        if not isinstance(address, str):
+        if type(address) is not str:
             return "", None, {"items": [], "total": 0, "limit": limit, "offset": offset}
         addr = (address or "").strip().lower()
         if not addr:
@@ -180,7 +193,8 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _extract_tx_history_item(self, tx, where, h_or_none, timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height):
-        txid = self._txid_hex_helper(getattr(tx, "txid", None))
+        txid_val = tx.txid
+        txid = self._txid_hex_helper(txid_val)
         is_cb = self.is_coinbase_tx(tx)
         conf = 0
         height = None
@@ -193,8 +207,9 @@ class HistoryHandler(NetworkHandlerProxy):
         is_graffiti = False
         event_type = None
 
-        for o in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(o, "amount", 0))
+        outputs = tx.outputs or []
+        for o in outputs:
+            amt = int(o.amount or 0)
             spk_hex = self._txout_to_spk_hex(o) or ""
             if spk_hex == target_spk_hex:
                 received_to_addr += amt
@@ -203,7 +218,7 @@ class HistoryHandler(NetworkHandlerProxy):
                     max_rec_amt = amt
                     main_recipient_spk = spk_hex
 
-            spk = getattr(o, "script_pubkey", None)
+            spk = o.script_pubkey
             if spk is not None:
                 try:
                     meta = GRAFF.parse_from_script(spk)
@@ -217,7 +232,8 @@ class HistoryHandler(NetworkHandlerProxy):
 
         spent_from_addr = 0
         sources = set()
-        for tin in getattr(tx, "inputs", []) or []:
+        inputs = tx.inputs or []
+        for tin in inputs:
             key = self.txin_prevkey(tin)
             amt_spk = opmap_chain.get(key)
             if where == "mempool":
@@ -335,16 +351,21 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _txout_to_spk_hex(self, txout) -> str | None:
-        spk = getattr(txout, "script_pubkey", None)
+        spk = txout.script_pubkey
         if spk is None:
             return None
-        ser = getattr(spk, "serialize", None)
-        if callable(ser):
-            return ser().hex()
-        if isinstance(spk, (bytes, bytearray)):
+
+        if type(spk) in (bytes, bytearray):
             return bytes(spk).hex()
-        if isinstance(spk, str):
+        if type(spk) is str:
             return spk.lower()
+
+        try:
+            ser = spk.serialize
+            if callable(ser):
+                return ser().hex()
+        except AttributeError:
+            pass
         return None
 
 
@@ -380,8 +401,8 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _setup_tx_history_cache(self):
-        cache = getattr(self, "_tx_history_cache", None)
-        cache_lock = getattr(self, "_tx_history_cache_lock", None)
+        cache = self._tx_history_cache
+        cache_lock = self._tx_history_cache_lock
         if cache is None or cache_lock is None:
             cache = self._tx_history_cache = collections.OrderedDict()
             cache_lock = self._tx_history_cache_lock = threading.RLock()

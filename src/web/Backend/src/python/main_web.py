@@ -42,11 +42,9 @@ def _parse_opts(param: str | None) -> dict:
     if not raw:
         return {}
     if raw.startswith("{") and raw.endswith("}"):
-        try:
-            obj = json.loads(raw)
-            return obj if isinstance(obj, dict) else {}
-        except Exception:
-            return {}
+        obj = json.loads(raw)
+        return obj if type(obj) is dict else {}
+
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     if not parts:
         return {}
@@ -65,11 +63,8 @@ def _parse_block_range_opts(param: str | None) -> dict:
     if not raw:
         return {}
     if raw.startswith("{") and raw.endswith("}"):
-        try:
-            obj = json.loads(raw)
-            return obj if isinstance(obj, dict) else {}
-        except Exception:
-            return {}
+        obj = json.loads(raw)
+        return obj if type(obj) is dict else {}
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     opts = {}
     if parts and parts[0].lstrip("-").isdigit():
@@ -82,18 +77,14 @@ def _parse_block_range_opts(param: str | None) -> dict:
 def _parse_host_port(host_in: object | None, port_in: object | None) -> tuple[str, int]:
     host_raw = host_in or CFG.BOOTSTRAP_NODE[0]
     host = str(host_raw)
-    try:
-        port = int(port_in or CFG.PORT_START)
-    except Exception:
-        port = CFG.PORT_START
-        log.exception("[main_exception] port: %s", port)
+    port = int(port_in or CFG.PORT_START)
     return host, port
 
 
 def _normalize_param(param: object | None):
     if param is None:
         return None
-    if isinstance(param, (dict, list)):
+    if type(param) in (dict, list):
         return param
     return str(param)
 
@@ -126,7 +117,7 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
     if op == "block":
         return rpc_handlers.rpc_block(client, param_norm)
     if op == "block_range":
-        opts = param_norm if isinstance(param_norm, dict) else _parse_block_range_opts(param_norm)
+        opts = param_norm if type(param_norm) is dict else _parse_block_range_opts(param_norm)
         return rpc_handlers.rpc_block_range(client, opts)
     if op == "tx":
         return rpc_handlers.rpc_tx(client, param_norm)
@@ -135,18 +126,18 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
     if op == "graffiti":
         return rpc_handlers.rpc_graffiti(client, param_norm)
     if op == "graffiti_posts":
-        opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
+        opts = param_norm if type(param_norm) is dict else _parse_opts(param_norm)
         return rpc_handlers.rpc_graffiti_posts(client, opts)
     if op == "graffiti_file":
-        opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
-        fallback = param_norm if isinstance(param_norm, str) else None
+        opts = param_norm if type(param_norm) is dict else _parse_opts(param_norm)
+        fallback = param_norm if type(param_norm) is str else None
         return rpc_handlers.rpc_graffiti_file(client, opts, fallback)
     if op == "graffiti_media_meta":
-        opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
-        fallback = param_norm if isinstance(param_norm, str) else None
+        opts = param_norm if type(param_norm) is dict else _parse_opts(param_norm)
+        fallback = param_norm if type(param_norm) is str else None
         return rpc_handlers.rpc_graffiti_media_meta(client, opts, fallback)
     if op == "graffiti_chunk":
-        opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
+        opts = param_norm if type(param_norm) is dict else _parse_opts(param_norm)
         return rpc_handlers.rpc_graffiti_chunk(client, opts)
     if op == "prefetch_blocks":
         try:
@@ -196,7 +187,7 @@ def _worker_loop() -> None:
                 log.exception("[worker] bad_json")
                 continue
             
-            if not isinstance(req, dict):
+            if type(req) is not dict:
                 log.warning("[worker] bad_request")
                 continue
             

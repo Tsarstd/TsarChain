@@ -47,7 +47,7 @@ class GuardHandler(NetworkHandlerProxy):
 
     def nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: int | float, window: int) -> bool:
         
-        if not (scope and sender_key and nonce and isinstance(ts, (int, float))):
+        if not (scope and sender_key and nonce and type(ts) in (int, float)):
             return False
 
         now = self._tb_now()
@@ -91,11 +91,12 @@ class GuardHandler(NetworkHandlerProxy):
 
 
     def _ensure_nonce_guard_initialized(self):
-        if getattr(self, "_nonce_guard_lock", None) is not None and getattr(self, "_nonce_guard_table", None) is not None:
+        if self._nonce_guard_lock is not None and self._nonce_guard_table is not None:
             return
 
         with GuardHandler._init_lock:
-            if getattr(self, "_nonce_guard_lock", None) is None:
+            if self._nonce_guard_lock is None:
                 self._nonce_guard_lock = threading.RLock()
-            if getattr(self, "_nonce_guard_table", None) is None:
+
+            if self._nonce_guard_table is None:
                 self._nonce_guard_table = {}

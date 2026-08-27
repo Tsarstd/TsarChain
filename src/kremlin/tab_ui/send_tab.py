@@ -74,8 +74,11 @@ class SendTab:
     # ----- Prefill helpers (used by GraffitiTab) -----
     def set_recipient(self, addr: str) -> None:
         self.to_var.set((addr or '').strip().lower())
-        if getattr(self, 'to_entry', None):
-            self.to_entry.icursor('end')
+        try:
+            if self.to_entry:
+                self.to_entry.icursor('end')
+        except AttributeError:
+            pass
         self._refresh_state()
 
     def set_amount(self, amount_text: str) -> None:
@@ -85,8 +88,11 @@ class SendTab:
             txt = ("{:.8f}".format(tsar)).rstrip('0').rstrip('.')
         self.amount_var.set(txt)
         self._amt_placeholder_active = False
-        if getattr(self, 'amount_entry', None):
-            self.amount_entry.config(fg=self.palette["accent"])
+        try:
+            if self.amount_entry:
+                self.amount_entry.config(fg=self.palette["accent"])
+        except AttributeError:
+            pass
         self._refresh_state()
 
     def set_opret_hex(self, opret_hex: str | None, for_recipient: str | None = None) -> None:
@@ -468,10 +474,18 @@ class SendTab:
 
         # Wheel scroll (no visible scrollbar)
         def _wheel(e):
-            if getattr(e, "delta", 0) != 0:
-                self.log_text.yview_scroll(-int(e.delta / 120), "units")
+            try:
+                delta = int(e.delta or 0)
+            except (AttributeError, TypeError, ValueError):
+                delta = 0
+            if delta != 0:
+                self.log_text.yview_scroll(-int(delta / 120), "units")
             else:
-                self.log_text.yview_scroll(1 if getattr(e, "num", 0) == 5 else -1, "units")
+                try:
+                    num = e.num
+                except AttributeError:
+                    num = 0
+                self.log_text.yview_scroll(1 if num == 5 else -1, "units")
             return "break"
         self.log_text.bind("<MouseWheel>", _wheel)
         self.log_text.bind("<Button-4>", _wheel)
@@ -548,11 +562,15 @@ class SendTab:
 
         def _on_resp(resp: Optional[Dict[str, Any]]) -> None:
             data = None
-            if resp and isinstance(resp, dict):
-                if "items" in resp and isinstance(resp["items"], dict):
-                    data = resp["items"].get(addr)
-                elif "spendable" in resp:
-                    data = resp
+            if resp:
+                try:
+                    items = resp.get("items")
+                    if items:
+                        data = items.get(addr)
+                    elif "spendable" in resp:
+                        data = resp
+                except AttributeError:
+                    pass
             if not data:
                 if self.from_spend_lbl:
                     self.from_spend_lbl.config(text="")
@@ -636,7 +654,11 @@ class SendTab:
 
         # Auto-clear OP_RETURN payload if user changes the recipient address
         cur_to = (self.to_var.get() or "").strip().lower()
-        if getattr(self, "_opret_recipient", None) and cur_to != self._opret_recipient:
+        try:
+            opret_recipient = self._opret_recipient
+        except AttributeError:
+            opret_recipient = None
+        if opret_recipient and cur_to != opret_recipient:
             self._opret_hex = None
             self._opret_recipient = None
 
@@ -705,11 +727,9 @@ class SendTab:
 
         def on_broadcasted(res) -> None:
             try:
-                if isinstance(res, str):
-                    txid = res
-                elif isinstance(res, dict):
+                try:
                     txid = res.get("txid") or res.get("hash") or res.get("id") or ""
-                else:
+                except AttributeError:
                     txid = str(res)
                 self._append_log(f"[OK] Broadcasted TXID: {txid}")
                 mb.showinfo("Broadcast Success", f"Transaction broadcasted.\n\nTXID:\n{txid}")
@@ -719,7 +739,11 @@ class SendTab:
 
         # Fire
         _extra = {}
-        if 'opret_hex' in inspect.signature(self.svc.create_sign_broadcast).parameters and getattr(self, '_opret_hex', None):
+        try:
+            opret_h = self._opret_hex
+        except AttributeError:
+            opret_h = None
+        if 'opret_hex' in inspect.signature(self.svc.create_sign_broadcast).parameters and opret_h:
             _extra['opret_hex'] = self._opret_hex
             self._opret_hex = None  # Consume single-use OP_RETURN payload
         self.svc.create_sign_broadcast(
@@ -735,7 +759,11 @@ class SendTab:
     def _make_unlocker(self, after: Callable[[], None]) -> Callable[[], None]:
         def _u():
             try:
-                if getattr(self, "_send_safety", None):
+                try:
+                    send_safety = self._send_safety
+                except AttributeError:
+                    send_safety = None
+                if send_safety:
                     self.root.after_cancel(self._send_safety)
                     self._send_safety = None
 
@@ -744,7 +772,6 @@ class SendTab:
                 self.root.config(cursor="")
             finally:
                 after()
-            return None
         return _u
 
     def _after_send_done(self, src_addr: str) -> None:

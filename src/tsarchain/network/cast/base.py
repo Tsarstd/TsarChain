@@ -18,11 +18,11 @@ class BroadcastHandlerProxy:
             self._in_getattr = False
 
     def __setattr__(self, name, value):
-        if name in ('broadcast', '_in_getattr') or getattr(self, 'broadcast', None) is self:
+        if name in ('broadcast', '_in_getattr'):
             super().__setattr__(name, value)
+            return
+        bcast = self.__dict__.get('broadcast')
+        if bcast is not None and bcast is not self and (name in bcast.__dict__ or name in bcast.__class__.__dict__):
+            bcast.__dict__[name] = value
         else:
-            bcast = getattr(self, 'broadcast', None)
-            if bcast is not None and (name in getattr(bcast, '__dict__', {}) or getattr(bcast.__class__, name, None) is not None):
-                setattr(bcast, name, value)
-            else:
-                super().__setattr__(name, value)
+            super().__setattr__(name, value)

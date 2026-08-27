@@ -561,6 +561,8 @@ class TestValidationMixin:
         instance = Dummy()
         block = Mock()
         tx = Mock()
+        tx._cached_raw_tx_w = None
+        tx.serialize = None
         tx.raw = b"raw_tx_data"  # length 11
         block.transactions = [tx]
         assert instance._estimate_block_size(block) == 80 + 11
@@ -574,6 +576,7 @@ class TestValidationMixin:
         block = Mock()
         tx = Mock()
         # Prevent the 'serialize' branch from interfering (Mock would otherwise provide it)
+        tx._cached_raw_tx_w = None
         tx.serialize = None
         tx.raw = None
         def size_func():
@@ -590,6 +593,9 @@ class TestValidationMixin:
         instance = Dummy()
         block = Mock()
         tx = Mock()
+        tx._cached_raw_tx_w = None
+        tx.serialize = None
+        tx.raw = None
         tx.size_bytes = 100
         block.transactions = [tx]
         assert instance._estimate_block_size(block) == 80 + 100
@@ -601,8 +607,11 @@ class TestValidationMixin:
                 pass
         instance = Dummy()
         block = Mock()
-        # Use spec_set=[] so the Mock has NO attributes at all.
-        tx = Mock(spec_set=[])
+        tx = Mock()
+        tx._cached_raw_tx_w = None
+        tx.serialize = None
+        tx.raw = None
+        tx.size_bytes = None
         block.transactions = [tx]
         assert instance._estimate_block_size(block) is None
 
@@ -1113,8 +1122,9 @@ class TestValidationMixin:
                 self._entry_script_bytes = Mock(return_value=b"script")
         instance = Dummy()
         block = Mock()
-        tx = Mock(spec=["is_coinbase", "inputs"])
+        tx = Mock(spec=["is_coinbase", "inputs", "sigops_count"])
         tx.is_coinbase = False
+        tx.sigops_count = None
         tx.inputs = [1, 2, 3]  # length 3
         
         block.transactions = [tx]

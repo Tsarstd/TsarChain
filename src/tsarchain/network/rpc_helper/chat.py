@@ -35,7 +35,7 @@ def get_presence_executor() -> ThreadPoolExecutor:
 
 
 def encode_prekey_bundle(bundle: dict) -> bytes:
-    if not isinstance(bundle, dict):
+    if type(bundle) is not dict:
         return b""
     ts = int(bundle.get("ts", 0) or 0)
     ik = bundle.get("ik")
@@ -46,42 +46,28 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
 
     flags = 0
     body = bytearray()
-    if isinstance(ik, str) and len(ik) == 64:
-        try:
-            body.extend(bytes.fromhex(ik))
-            flags |= 0x01
-        except ValueError:
-            pass
-    if isinstance(spk, str) and len(spk) == 64:
-        try:
-            body.extend(bytes.fromhex(spk))
-            flags |= 0x02
-        except ValueError:
-            pass
-    if isinstance(sig, str) and sig:
-        try:
-            sig_bytes = bytes.fromhex(sig)
-            if len(sig_bytes) <= 65535:
-                body.extend(struct.pack("<H", len(sig_bytes)))
-                body.extend(sig_bytes)
-                flags |= 0x04
-        except ValueError:
-            pass
-    if isinstance(spend_pub, str) and len(spend_pub) == 66:
-        try:
-            body.extend(bytes.fromhex(spend_pub))
-            flags |= 0x08
-        except ValueError:
-            pass
+    if ik and type(ik) is str and len(ik) == 64:
+        body.extend(bytes.fromhex(ik))
+        flags |= 0x01
+    if spk and type(spk) is str and len(spk) == 64:
+        body.extend(bytes.fromhex(spk))
+        flags |= 0x02
+    if sig and type(sig) is str:
+        sig_bytes = bytes.fromhex(sig)
+        if len(sig_bytes) <= 65535:
+            body.extend(struct.pack("<H", len(sig_bytes)))
+            body.extend(sig_bytes)
+            flags |= 0x04
+    if spend_pub and type(spend_pub) is str and len(spend_pub) == 66:
+        body.extend(bytes.fromhex(spend_pub))
+        flags |= 0x08
 
     opk_bytes = bytearray()
-    if isinstance(opk_list, list):
+    if type(opk_list) is list:
         for o in opk_list:
-            if isinstance(o, str) and len(o) == 64:
-                try:
-                    opk_bytes.extend(bytes.fromhex(o))
-                except ValueError:
-                    pass
+            if o and type(o) is str and len(o) == 64:
+                opk_bytes.extend(bytes.fromhex(o))
+
     opk_count = len(opk_bytes) // 32
     opk_header = struct.pack("<I", opk_count)
     header = struct.pack("<QB", ts, flags)
@@ -152,16 +138,19 @@ class ChatHandler(NetworkHandlerProxy):
     def get_spend_pub(self, addr: str) -> str | None:
         if not addr:
             return None
-        spend_dict = getattr(self, "chat_spend_pub", None)
-        if isinstance(spend_dict, dict):
-            sp = (spend_dict.get(addr) or "").strip().lower()
-            if sp:
-                return sp
+        try:
+            spend_dict = self.chat_spend_pub
+            if type(spend_dict) is dict:
+                sp = (spend_dict.get(addr) or "").strip().lower()
+                if sp:
+                    return sp
+        except AttributeError:
+            pass
         b = self.get_prekey_bundle(addr)
         sp = (b.get("spend_pub") or "").strip().lower()
         if sp:
             with self.chat_lock:
-                if isinstance(getattr(self, "chat_spend_pub", None), dict):
+                if type(self.chat_spend_pub) is dict:
                     self.chat_spend_pub[addr] = sp
             return sp
         return None
@@ -187,7 +176,7 @@ class ChatHandler(NetworkHandlerProxy):
             kv_delete("chat_prekeys", addr.encode("utf-8"))
 
     def send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
-        if not isinstance(peer, tuple) or len(peer) != 2:
+        if type(peer) is not tuple or len(peer) != 2:
             raise ValueError("bad peer")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1.5)
@@ -210,10 +199,7 @@ class ChatHandler(NetworkHandlerProxy):
 
 
     def relay_presence_async(self, pres: dict, exclude=None) -> None:
-        try:
-            get_presence_executor().submit(self._relay_presence, pres, exclude)
-        except Exception:
-            pass
+        get_presence_executor().submit(self._relay_presence, pres, exclude)
 
 
     def mailbox_put(self, addr, item, ttl_s, per_addr_max, global_max):

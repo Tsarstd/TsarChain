@@ -30,7 +30,9 @@ class UTXOGraffitiMixin:
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
         if block_height is None:
             return
-        txid_hex = self._txid_hex(getattr(tx, "txid", None))
+
+        tx_txid = tx.txid
+        txid_hex = self._txid_hex(tx_txid)
         meta = None
         for info in outputs_info:
             script_bytes = info.get("script_bytes") or b""
@@ -60,7 +62,7 @@ class UTXOGraffitiMixin:
         txid_hex: str,
         block_height: int,
         block_hash: str | None = None
-        ) -> None:
+    ) -> None:
         
         sha_hex = str(meta.get("sha256") or "")
         creator = (meta.get("creator") or "").strip().lower()
@@ -167,7 +169,7 @@ class UTXOGraffitiMixin:
         pool_balance = int(stats.get("pool_balance", 0))
         last_epoch = int(stats.get("last_paid_epoch", -1))
         recs = meta.get("recipients") or []
-        if not isinstance(recs, list) or not recs:
+        if type(recs) is not list or not recs:
             log.warning("[_handle_graffiti_payout] PAYOUT missing recipients art_id=%s tx=%s", art_id, txid_hex)
             return
 

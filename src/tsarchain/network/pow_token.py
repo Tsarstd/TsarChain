@@ -43,7 +43,7 @@ def verify_pow(pow_obj: dict, nonce: str | None, *, expected_scope: str, identit
     """
     Verify a submitted PoW solution without storing state on the server.
     """
-    if not pow_obj or not isinstance(pow_obj, dict) or not nonce:
+    if not pow_obj or type(pow_obj) is not dict or not nonce:
         return False
     now = time.time()
     scope = str(pow_obj.get("scope") or "")

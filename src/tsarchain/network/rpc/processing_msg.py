@@ -75,11 +75,11 @@ def process_message(
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
     
-    if not isinstance(message, dict):
+    if type(message) is not dict:
         return {"error": "invalid message: expected JSON object"}
 
     mtype = message.get("type")
-    if not isinstance(mtype, str):
+    if type(mtype) is not str:
         return {"error": "missing or invalid 'type'"}
     
     mtype = mtype.strip().upper()
@@ -159,12 +159,9 @@ def _sanitize_rpc_source(val: Any) -> str | None:
 def _is_storage_node_id(network, node_id: str | None) -> bool:
     if not node_id:
         return False
-    try:
-        peers = getattr(network, "storage_peers", None) or {}
-    except Exception:
-        return False
+    peers = network.storage_peers or {}
     for meta in peers.values():
-        if isinstance(meta, dict) and meta.get("node_id") == node_id:
+        if meta.get("node_id") == node_id:
             return True
     return False
 
@@ -172,7 +169,8 @@ def _is_storage_node_id(network, node_id: str | None) -> bool:
 def _is_miner_sender(network, src_node_id: str | None, src_pubkey: str | None, addr: Any) -> bool:
     if not src_node_id:
         return False
-    peer_pubkeys = getattr(network, "peer_pubkeys", {}) or {}
+
+    peer_pubkeys = network.peer_pubkeys or {}
     pinned = peer_pubkeys.get(src_node_id)
     if not pinned:
         return False
@@ -182,9 +180,7 @@ def _is_miner_sender(network, src_node_id: str | None, src_pubkey: str | None, a
     return True
 
 
-def _identify_rpc_role(
-    mtype: str, network, src_node_id, src_pubkey, addr, *, is_miner: bool | None = None
-) -> tuple[str, str]:
+def _identify_rpc_role(mtype: str, network, src_node_id, src_pubkey, addr, *, is_miner: bool | None = None) -> tuple[str, str]:
     if is_miner is None:
         is_miner = _is_miner_sender(network, src_node_id, src_pubkey, addr)
     for role, allowed in ROLE_RPC_MAP.items():
@@ -195,53 +191,49 @@ def _identify_rpc_role(
 
 
 def _client_ip(addr) -> str:
-    if isinstance(addr, tuple) and addr:
+    if addr:
         return addr[0]
     return "0.0.0.0"
 
 
 def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
-    tx_count = None
-    store = getattr(pool, "_pool", None)
-    if isinstance(store, dict):
-        tx_count = len(store)
-    else:
-        all_txs_fn = getattr(pool, "get_all_txs", None)
-        txs = all_txs_fn() if callable(all_txs_fn) else []
-        tx_count = len(txs or [])
+    store = pool._pool
+    tx_count = len(store)
     tx_section["mempool_txs"] = int(tx_count)
-
-    size_est = getattr(pool, "current_size", None)
+    size_est = pool.current_size
     if size_est is not None:
         tx_section["mempool_vbytes_estimate"] = int(size_est)
 
 
 def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
-    graff_section = snapshot.setdefault("graffiti", {})
-    if isinstance(graff_section, dict):
+    try:
+        graff_section = snapshot.setdefault("graffiti", {})
         on_mem = 0
-        all_txs_fn = getattr(pool, "get_all_txs", None)
+        all_txs_fn = pool.get_all_txs
         all_txs = all_txs_fn() if callable(all_txs_fn) else []
         for tx in all_txs or []:
-            for tx_out in getattr(tx, "outputs", []) or []:
-                spk = getattr(tx_out, "script_pubkey", None)
+            outputs = tx.outputs or []
+            for tx_out in outputs:
+                spk = tx_out.script_pubkey
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     on_mem += 1
         graff_section["graffiti_on_mempool"] = int(on_mem)
+    except (AttributeError, TypeError):
+        pass
 
 
 def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     """Inject live mempool stats into the snapshot returned to clients."""
-    if not isinstance(snapshot, dict):
+    if type(snapshot) is not dict:
         return
 
     tx_section = snapshot.setdefault("transactions", {})
-    if not isinstance(tx_section, dict):
+    if type(tx_section) is not dict:
         return
 
-    broadcast = getattr(network, "broadcast", None)
-    pool = getattr(broadcast, "mempool", None) if broadcast else None
+    broadcast = network.broadcast
+    pool = broadcast.mempool if broadcast else None
     if pool is None:
         return
 
@@ -261,7 +253,7 @@ def _relay_chain(network, route: list[tuple], inner: dict, src_addr=None):
         return
     first = route[0]
     payload = {"type": "CHAT_RELAY", "route": route[1:], "inner": inner}
-    send_fn = getattr(network, "_send_chat_relay", None)
+    send_fn = network._send_chat_relay
     if callable(send_fn):
         send_fn(first, payload)
     else:

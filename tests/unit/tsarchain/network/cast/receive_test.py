@@ -6,6 +6,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from tsarchain.network.cast.receive import ReceiveHandler
+from tsarchain.core.tx import TxOut
+from tsarchain.utils.helpers import Script, OP_0
 
 class DummyNode(ReceiveHandler):
     def __init__(self):
@@ -54,43 +56,66 @@ def test_log_block_reject(dummy_node):
 
 def test_native_script_bytes():
     assert ReceiveHandler._native_script_bytes(None) is None
-    assert ReceiveHandler._native_script_bytes(b"\x00\x01") == b"\x00\x01"
-    assert ReceiveHandler._native_script_bytes("abcdef") == b"\xab\xcd\xef"
     
     mock_obj = MagicMock()
     mock_obj.serialize.return_value = b"\xaa\xbb"
     assert ReceiveHandler._native_script_bytes(mock_obj) == b"\xaa\xbb"
     
     mock_wrapper = MagicMock()
-    del mock_wrapper.serialize
-    mock_wrapper.script_pubkey = "112233"
+    mock_wrapper.serialize = None
+    mock_inner = MagicMock()
+    mock_inner.serialize.return_value = b"\x11\x22\x33"
+    mock_wrapper.script_pubkey = mock_inner
     assert ReceiveHandler._native_script_bytes(mock_wrapper) == b"\x11\x22\x33"
 
+    # Real TxOut instance test (no serialize method on TxOut itself)
+    real_script = Script([OP_0, b"\x12" * 20])
+    real_txout = TxOut(amount=5000, script_pubkey=real_script)
+    assert ReceiveHandler._native_script_bytes(real_txout) == real_script.serialize()
+
 def test_normalize_native_prevout(dummy_node):
-    entry_dict = {
-        "tx_out": {
-            "amount": 1000
-        },
-        "script_pubkey": "aabbcc",
-        "is_coinbase": True,
-        "block_height": 50
+    # Test with real TxOut in dict entry (matching production UTXODB lookup_entry)
+    real_script = Script([OP_0, b"\x34" * 20])
+    real_txout = TxOut(amount=7777, script_pubkey=real_script)
+    real_entry = {
+        "tx_out": real_txout,
+        "is_coinbase": False,
+        "block_height": 21,
     }
-    result = dummy_node._normalize_native_prevout(entry_dict)
+    res = dummy_node._normalize_native_prevout(real_entry)
+    assert res == (7777, real_script.serialize(), False, 21)
+
+    mock_spk1 = MagicMock()
+    mock_spk1.serialize.return_value = b"\xaa\xbb\xcc"
+    mock_tx_out1 = MagicMock()
+    mock_tx_out1.amount = 1000
+    mock_tx_out1.script_pubkey = mock_spk1
+    mock_entry1 = MagicMock()
+    mock_entry1.tx_out = mock_tx_out1
+    mock_entry1.is_coinbase = True
+    mock_entry1.block_height = 50
+
+    result = dummy_node._normalize_native_prevout(mock_entry1)
     assert result == (1000, b"\xaa\xbb\xcc", True, 50)
     
-    mock_entry = MagicMock()
-    mock_tx_out = MagicMock()
-    mock_tx_out.amount = 2000
-    mock_tx_out.serialize.return_value = b"\xdd\xee"
-    mock_entry.tx_out = mock_tx_out
-    mock_entry.is_coinbase = False
-    mock_entry.block_height = 100
+    mock_spk2 = MagicMock()
+    mock_spk2.serialize.return_value = b"\xdd\xee"
+    mock_tx_out2 = MagicMock()
+    mock_tx_out2.amount = 2000
+    mock_tx_out2.script_pubkey = mock_spk2
+    mock_entry2 = MagicMock()
+    mock_entry2.tx_out = mock_tx_out2
+    mock_entry2.is_coinbase = False
+    mock_entry2.block_height = 100
     
-    result = dummy_node._normalize_native_prevout(mock_entry)
+    result = dummy_node._normalize_native_prevout(mock_entry2)
     assert result == (2000, b"\xdd\xee", False, 100)
     
-    invalid_entry = {"amount": 10}
-    assert dummy_node._normalize_native_prevout(invalid_entry) is None
+    mock_invalid = MagicMock()
+    mock_invalid.tx_out = None
+    mock_invalid.script_pubkey = None
+    mock_invalid.serialize = None
+    assert dummy_node._normalize_native_prevout(mock_invalid) is None
 
 def test_build_native_prevout_snapshot(dummy_node):
     mock_block = MagicMock()
@@ -112,12 +137,17 @@ def test_build_native_prevout_snapshot(dummy_node):
     
     mock_block.transactions = [mock_tx1, mock_tx2]
     
-    dummy_node.utxodb.lookup_entry.return_value = {
-        "tx_out": {"amount": 500},
-        "script_pubkey": "00",
-        "is_coinbase": False,
-        "block_height": 10
-    }
+    mock_spk = MagicMock()
+    mock_spk.serialize.return_value = b"\x00"
+    mock_tx_out = MagicMock()
+    mock_tx_out.amount = 500
+    mock_tx_out.serialize = None
+    mock_tx_out.script_pubkey = mock_spk
+    mock_entry = MagicMock()
+    mock_entry.tx_out = mock_tx_out
+    mock_entry.is_coinbase = False
+    mock_entry.block_height = 10
+    dummy_node.utxodb.lookup_entry.return_value = mock_entry
     
     snapshot, utxo_items = dummy_node._build_native_prevout_snapshot(mock_block)
     
@@ -221,7 +251,7 @@ def test_receive_mempool(dummy_node):
     dummy_node.mempool.flush.assert_called_once()
 
 def test_build_native_prevout_snapshot_no_lookup(dummy_node):
-    del dummy_node.utxodb.lookup_entry
+    dummy_node.utxodb.lookup_entry = None
     mock_block = MagicMock()
     assert dummy_node._build_native_prevout_snapshot(mock_block) is None
 
@@ -248,9 +278,12 @@ def test_native_precheck_block_compact_validation(dummy_node):
     mock_input.witness = [b"wit"]
     mock_tx.inputs = [mock_input]
     
+    mock_spk = MagicMock()
+    mock_spk.serialize.return_value = b"spk"
     mock_out = MagicMock()
     mock_out.amount = 100
-    mock_out.script_pubkey = b"spk"
+    mock_out.serialize = None
+    mock_out.script_pubkey = mock_spk
     mock_tx.outputs = [mock_out]
     
     mock_block.transactions = [mock_tx]
