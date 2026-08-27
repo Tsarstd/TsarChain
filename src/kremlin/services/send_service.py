@@ -26,7 +26,7 @@ class SendService:
             sats = parse_amount_sats(raw)
         except ValueError as exc:
             msg = str(exc)
-            if "Amount format invalid" in msg or "Invalid" in msg:
+            if "Amount format invalid" in msg or "Invalid" in msg or "Format jumlah tidak valid" in msg:
                 log.error("Invalid amount format")
                 raise ValueError("Invalid amount format") from exc
             raise

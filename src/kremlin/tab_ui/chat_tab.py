@@ -727,13 +727,6 @@ class ChatTab:
             self.toast(f"Chat unlock key cancelled/failed: {e}", kind="error")
             return False
         
-        if dh_cache:
-            try:
-                sk, pk, _t = dh_cache.get(a, (None, None, 0))
-                if sk and pk:
-                    dh_cache[a] = (sk, pk, time.time() + self._chat_key_ttl_sec)
-            except AttributeError:
-                pass
         return True
 
     def _chat_enter_hero(self):

@@ -187,11 +187,14 @@ class ChatManager:
             self._pwd_cache_put(addr, pwd)
         if not pwd:
             return None, "cancelled"
-        w = Wallet.unlock(pwd, addr)
-        priv_hex = w["private_key"]
-        self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
-        self._pwd_cache_put(addr, pwd)
-        return priv_hex, None
+        try:
+            w = Wallet.unlock(pwd, addr)
+            priv_hex = w["private_key"]
+            self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
+            self._pwd_cache_put(addr, pwd)
+            return priv_hex, None
+        except Exception as e:
+            return None, str(e)
 
     def get_priv_for_chat(self, address: str) -> Optional[str]:
         addr = COM.canon(address)
@@ -206,11 +209,14 @@ class ChatManager:
 
         if not pwd:
             return None
-        w = Wallet.unlock(pwd, addr)
-        priv_hex = w["private_key"]
-        self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
-        self._pwd_cache_put(addr, pwd)
-        return priv_hex
+        try:
+            w = Wallet.unlock(pwd, addr)
+            priv_hex = w["private_key"]
+            self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
+            self._pwd_cache_put(addr, pwd)
+            return priv_hex
+        except Exception:
+            return None
 
     # ----------------------------------------------------------------------
     # Pubkey Directory
