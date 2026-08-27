@@ -523,23 +523,6 @@ class TestValidationMixin:
     # -------------------------------------------------------------------------
     # _estimate_block_size
     # -------------------------------------------------------------------------
-    def test_estimate_block_size_with_cached_txs(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        block.transactions = []
-        assert instance._estimate_block_size(block) == 80
-
-        tx1 = Mock()
-        tx2 = Mock()
-        setattr(tx1, "_cached_raw_tx_w", b"tx1" * 10)  # length 30
-        setattr(tx2, "_cached_raw_tx_w", b"tx2" * 5)   # length 15
-        block.transactions = [tx1, tx2]
-        assert instance._estimate_block_size(block) == 80 + 30 + 15
-
     def test_estimate_block_size_with_serialize_method(self):
         class Dummy(ValidationProxy):
             def __init__(self):
@@ -552,68 +535,6 @@ class TestValidationMixin:
         block.transactions = [tx]
         assert instance._estimate_block_size(block) == 80 + 13
         tx.serialize.assert_called_once()
-
-    def test_estimate_block_size_with_raw_attribute(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = b"raw_tx_data"  # length 11
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) == 80 + 11
-
-    def test_estimate_block_size_with_size_bytes_callable(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        # Prevent the 'serialize' branch from interfering (Mock would otherwise provide it)
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = None
-        def size_func():
-            return 42
-        tx.size_bytes = size_func
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) == 80 + 42
-
-    def test_estimate_block_size_with_size_bytes_int(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = None
-        tx.size_bytes = 100
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) == 80 + 100
-
-    def test_estimate_block_size_fallback_none(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = None
-        tx.size_bytes = None
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) is None
 
     # -------------------------------------------------------------------------
     # _chain_state_token_locked
@@ -979,70 +900,6 @@ class TestValidationMixin:
         block = Mock()
         block.transactions = [Mock()]  # satu tx
         assert instance._check_block_limits(block) is True
-
-    # -------------------------------------------------------------------------
-    # _entry_script_bytes
-    # -------------------------------------------------------------------------
-    def test_entry_script_bytes_dict_with_tx_out(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {"tx_out": {"script_pubkey": b"script"}}
-        assert instance._entry_script_bytes(entry) == b"script"
-
-    def test_entry_script_bytes_dict_direct(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {"script_pubkey": b"script"}
-        assert instance._entry_script_bytes(entry) == b"script"
-
-    def test_entry_script_bytes_object_with_script_pubkey(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        obj = Mock()
-        obj.script_pubkey = b"script"
-        entry = {"tx_out": obj}
-        assert instance._entry_script_bytes(entry) == b"script"
-
-    def test_entry_script_bytes_object_script_pubkey_serialize(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        spk = Mock()
-        spk.serialize = Mock(return_value=b"serialized_script")
-        obj = Mock()
-        obj.script_pubkey = spk
-        entry = {"tx_out": obj}
-        assert instance._entry_script_bytes(entry) == b"serialized_script"
-        spk.serialize.assert_called_once()
-
-    def test_entry_script_bytes_string_hex(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {"script_pubkey": "deadbeef"}
-        assert instance._entry_script_bytes(entry) == bytes.fromhex("deadbeef")
-
-    def test_entry_script_bytes_none(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {}
-        assert instance._entry_script_bytes(entry) is None
 
     # -------------------------------------------------------------------------
     # _check_sigops_budget

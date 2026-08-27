@@ -8,7 +8,6 @@ from __future__ import annotations
 import time
 import threading
 
-from typing import Optional
 from typing import TYPE_CHECKING
 from bech32 import bech32_encode, convertbits
 
@@ -115,15 +114,9 @@ class BlockValidator:
             if raw_no_witness is None:
                 self.blockchain._last_block_validation_error = "tx_serialize_failed"
                 return False
+            
             txid_bytes = H.hash256(raw_no_witness)
-            existing = tx.txid
-            existing_bytes = None
-            if type(existing) in (bytes, bytearray):
-                existing_bytes = bytes(existing)
-            elif type(existing) is str:
-                existing_bytes = bytes.fromhex(existing)
-
-            if existing_bytes is not None and existing_bytes != txid_bytes:
+            if tx.txid != txid_bytes:
                 self.blockchain._last_block_validation_error = "txid_mismatch"
                 return False
 
@@ -462,15 +455,8 @@ class BlockValidator:
         return self._verify_block_fees_and_rewards(block, txs, cb, fees)
 
 
-    def _prepare_tx_snapshot(self, txs, store) -> dict | None: #NOSONAR
+    def _prepare_tx_snapshot(self, txs, store) -> dict | None:
         store_lookup = store.lookup_entry
-
-        utxo_view = None
-        if not callable(store_lookup):
-            utxo_view = store.utxos
-            if utxo_view is None:
-                utxo_view = store.load_utxo_set()
-
         processed_txids = set()
         snapshot: dict[str, dict] = {}
         for tx in txs:
@@ -503,10 +489,12 @@ class BlockValidator:
                 snap_key = f"{prev_txid_hex.lower()}:{prev_index}"
                 if snap_key in snapshot:
                     continue
-                entry = self._resolve_prevout(store_lookup, utxo_view, prev_txid_hex.lower(), prev_index)
+
+                entry = store_lookup(prev_txid_hex.lower(), prev_index)
                 if entry is None:
                     self.blockchain._last_block_validation_error = f"prevout_missing {prev_txid_hex}:{prev_index}"
                     return None
+
                 normalized = self._normalize_snapshot_entry(entry, snap_key)
                 if normalized is None:
                     self.blockchain._last_block_validation_error = "native_snapshot_invalid_entry"
@@ -568,55 +556,8 @@ class BlockValidator:
             return raw
 
 
-    def _estimate_block_size(self, block: Block) -> Optional[int]: 
-        total = 80
-        txs = block.transactions or []
-        for tx in txs:
-            sz = self._estimate_tx_size(tx)
-            if sz is None:
-                return None
-            total += int(sz)
-        return total
-
-
-    def _estimate_tx_size(self, tx) -> Optional[int]: 
-        try:
-            cached = tx._cached_raw_tx_w
-            if type(cached) in (bytes, bytearray):
-                return len(cached)
-        except AttributeError:
-            pass
-    
-        try:
-            serialize_fn = tx.serialize
-            if callable(serialize_fn):
-                raw = serialize_fn()
-                return len(raw if type(raw) in (bytes, bytearray) else bytes.fromhex(raw))
-        except AttributeError:
-            pass
-            
-        try:
-            raw_attr = tx.raw
-            if type(raw_attr) in (bytes, bytearray):
-                return len(raw_attr)
-        except AttributeError:
-            pass
-            
-        try:
-            size_attr = tx.size_bytes
-            if size_attr is not None:
-                return int(size_attr()) if callable(size_attr) else int(size_attr)
-        except AttributeError:
-            pass
-
-        try:
-            raw = self._serialize_tx_cached(tx, include_witness=True)
-            if type(raw) in (bytes, bytearray):
-                return len(raw)
-        except Exception:
-            pass
-            
-        return None
+    def _estimate_block_size(self, block: Block) -> int:
+        return 80 + sum(len(tx.serialize()) for tx in block.transactions or [])
 
 
     def _chain_state_token_locked(self): 
@@ -678,25 +619,21 @@ class BlockValidator:
         return True
 
 
-    def _check_block_limits(self, block: Block) -> bool: 
-        txs_len = len(block.transactions) if block.transactions else 0
-        txs_ex_coinbase = max(0, txs_len - 1)
+    def _check_block_limits(self, block: Block) -> bool:
+        txs_ex_coinbase = max(0, len(block.transactions or []) - 1)
         if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
             self.blockchain._last_block_validation_error = "too_many_txs"
             return False
-        est_size = self._estimate_block_size(block)
-        if est_size is not None and est_size > CFG.MAX_BLOCK_BYTES:
+
+        if (est_size := self._estimate_block_size(block)) is not None and est_size > CFG.MAX_BLOCK_BYTES:
             self.blockchain._last_block_validation_error = "block_size_exceeded"
             return False
+
         return True
 
 
-    def _entry_script_bytes(self, entry) -> bytes | None: 
-        return extract_script_bytes(entry)
-
-
     def _validate_graffiti_output(self, spk_obj) -> bool: 
-        raw = self._extract_raw_spk(spk_obj)
+        raw = extract_script_bytes(spk_obj)
         if not raw:
             return True
         data = H.last_pushdata(raw)
@@ -716,10 +653,6 @@ class BlockValidator:
         elif event == "COMMENT":
             return self._validate_graffiti_comment_event(meta)
         return True
-
-
-    def _extract_raw_spk(self, spk_obj) -> bytes | None: 
-        return extract_script_bytes(spk_obj)
 
 
     def _validate_graffiti_post_event(self, meta) -> bool: 
@@ -753,7 +686,7 @@ class BlockValidator:
 
 
     def _spk_to_address(self, spk_obj) -> str | None: 
-        spk_bytes = self._extract_raw_spk(spk_obj)
+        spk_bytes = extract_script_bytes(spk_obj)
         if not spk_bytes:
             return None
         if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
@@ -767,10 +700,6 @@ class BlockValidator:
         return None
 
 
-    def _script_to_bytes(self, spk_obj): 
-        return extract_script_bytes(spk_obj)
-
-
     def _txid_hex(self, value): 
         if value is None:
             return None
@@ -779,53 +708,12 @@ class BlockValidator:
         return str(value)
 
 
-    def _legacy_lookup(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
-        if type(snapshot_map) is not dict:
-            return None
-
-        txid_lower = prev_txid_hex.lower()
-        idx = int(prev_index)
-
-        # Standard key "txid_hex:vout"
-        key = f"{txid_lower}:{idx}"
-        entry = snapshot_map.get(key) or snapshot_map.get(prev_txid_hex)
-        if entry is not None:
-            return entry
-
-        # Bytes key b"txid_hex:vout"
-        entry = snapshot_map.get(key.encode("utf-8"))
-        if entry is not None:
-            return entry
-
-        # Bucket snapshot_map[txid_hex][vout]
-        bucket = snapshot_map.get(txid_lower) or snapshot_map.get(prev_txid_hex)
-        if type(bucket) is dict and idx in bucket:
-            return bucket[idx]
-
-        # Tuple keys (txid_hex, vout) or (txid_bytes, vout)
-        for tuple_key in ((txid_lower, idx), (prev_txid_hex, idx)):
-            if tuple_key in snapshot_map:
-                return snapshot_map[tuple_key]
-
-        tuple_b = (bytes.fromhex(prev_txid_hex), idx)
-        if tuple_b in snapshot_map:
-            return snapshot_map[tuple_b]
-
-        return None
-
-
-    def _resolve_prevout(self, store_lookup, utxo_view, prev_txid_hex: str, prev_index: int): 
-        if callable(store_lookup):
-            return store_lookup(prev_txid_hex, prev_index)
-        return self._legacy_lookup(utxo_view, prev_txid_hex, prev_index)
-
-
     def _normalize_snapshot_entry(self, entry, key_desc: str): 
         if type(entry) is dict:
             tx_out = entry.get("tx_out") or entry
-            script_bytes = self._script_to_bytes(tx_out)
+            script_bytes = extract_script_bytes(tx_out)
             if script_bytes is None:
-                script_bytes = self._script_to_bytes(entry.get("script_pubkey"))
+                script_bytes = extract_script_bytes(entry.get("script_pubkey"))
             if script_bytes is None:
                 log.warning("[native_snapshot] entry %s missing script", key_desc)
                 return None
@@ -840,7 +728,7 @@ class BlockValidator:
             born = int(entry.get("block_height", entry.get("height", 0)) or 0)
         else:
             tx_out = entry.tx_out or entry
-            script_bytes = self._script_to_bytes(tx_out)
+            script_bytes = extract_script_bytes(tx_out)
             if script_bytes is None:
                 log.warning("[native_snapshot] entry %s missing script", key_desc)
                 return None
@@ -894,7 +782,7 @@ class BlockValidator:
             entry = utxo_view.get(key) or utxo_view.get(key.lower())
         if entry is None:
             return None
-        return self._entry_script_bytes(entry)
+        return extract_script_bytes(entry)
 
 
     def _check_sigops_budget(self, block: Block, store: UTXODB, utxo_view) -> bool: 

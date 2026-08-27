@@ -195,7 +195,6 @@ class MiningManager:
         new_prev_hash = new_block.prev_block_hash
         new_height = int(new_block.height or 0)
         latest_height = int(latest.height if latest.height is not None else -1)
-
         is_stale = latest_hash != new_prev_hash or new_height != latest_height + 1
         
         if is_stale:

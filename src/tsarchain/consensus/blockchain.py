@@ -314,7 +314,7 @@ class Blockchain():
             self._on_tip_changed_callbacks.append(cb)
 
     def notify_tip_changed(self, new_height: int, new_hash: str):
-        for cb in list(self._on_tip_changed_callbacks):
+        for cb in self._on_tip_changed_callbacks:
             try:
                 cb(new_height, new_hash)
             except Exception:
