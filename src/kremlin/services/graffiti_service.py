@@ -15,9 +15,9 @@ import mimetypes
 
 from urllib.parse import urlparse
 from typing import Any, Callable, Dict, Optional, Tuple
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from tsarchain.utils import config as CFG
+from tsarchain.utils.helpers import connect_tcp_socket, parse_amount_sats
 from tsarchain.utils.benchmarks import benchmark
 from tsarchain.network.pow_token import solve_pow
 from tsarchain.network.protocol import send_message, recv_message
@@ -63,11 +63,7 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
     return None
 
 
-def _connect_socket(host: str, port: int, timeout: float) -> socket.socket:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(timeout)
-    s.connect((host, port))
-    return s
+_connect_socket = connect_tcp_socket
 
 
 def _send_storage_request(
@@ -347,29 +343,8 @@ def build_post_plan(
     }
 
 
-def parse_amount_str(raw: str, default: int) -> int:
-    txt = (raw or "").strip()
-    if not txt:
-        return int(default)
-    txt = txt.replace(" ", "").replace(",", ".")
-    if txt.startswith("."):
-        txt = "0" + txt
-    try:
-        dec = Decimal(txt)
-    except InvalidOperation:
-        raise ValueError("Format jumlah tidak valid")
-    if dec <= 0:
-        if dec == 0 and int(default) == 0:
-            return 0
-        raise ValueError("Jumlah harus > 0")
-
-    quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
-    dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
-    sats = int(dec_q * Decimal(CFG.TSAR))
-    if sats <= 0:
-        raise ValueError("Jumlah terlalu kecil")
-
-    return sats
+def parse_amount_str(raw: str, default: int = 0) -> int:
+    return parse_amount_sats(raw, default=default)
 
 
 def build_comment_plan(

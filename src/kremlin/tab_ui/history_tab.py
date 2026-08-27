@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 from .wallet_tab import sat_to_tsar
 from tsarchain.utils import config as CFG
 from ..services.tx_history import HistoryService
-from kremlin.ui_utils import enable_treeview_hover, insert_treeview_chunked
+from kremlin.ui_utils import enable_treeview_hover, insert_treeview_chunked, widget_exists
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.history_tab")
@@ -509,13 +509,8 @@ class HistoryTab(tk.Frame):
         if not txid:
             return
         self.app.show_explorer_frame()
-        try:
-            explore_panel = self.app.explore_panel
-        except AttributeError:
-            explore_panel = None
+        explore_panel = self.app.explore_panel
         if explore_panel:
             explore_panel._nav(f"tsar://tx/{txid}")
 
-    @staticmethod
-    def _widget_exists(widget) -> bool:
-        return bool(widget) and widget.winfo_exists()
+    _widget_exists = staticmethod(widget_exists)

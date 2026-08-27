@@ -16,6 +16,7 @@ from typing import Dict, Iterator, Tuple, Optional
 from tsarcore_native import open_storage as _native_open_storage
 
 from tsarchain.utils import config as CFG
+from tsarchain.utils.helpers import clean_remove_file
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.database_archivist")
@@ -196,10 +197,7 @@ class ArchivistDatabase:
         except OSError:
             with open(src_path, "rb") as sf, open(final_path, "wb") as df:
                 shutil.copyfileobj(sf, df, length=64 * 1024)
-            try:
-                os.remove(src_path)
-            except OSError:
-                pass
+            clean_remove_file(src_path)
         return True
 
     def get_final_bytes_range(self, gid: str, offset: int, length: int) -> Optional[bytes]:
@@ -247,26 +245,13 @@ class ArchivistDatabase:
             raise RuntimeError("blobs_disabled")
         if incoming:
             for path in (self._incoming_part_path(gid), self._incoming_bin_path(gid)):
-                if os.path.isfile(path):
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
+                clean_remove_file(path)
         if final:
-            final_path = self._final_blob_path(gid)
-            if os.path.isfile(final_path):
-                try:
-                    os.remove(final_path)
-                except OSError:
-                    pass
+            clean_remove_file(self._final_blob_path(gid))
 
     # ---------------- Payout Guard KV Store Integration ----------------
     def load_payout_guard(self) -> dict:
-        try:
-            kv_guard = self._kv_guard
-        except AttributeError:
-            kv_guard = None
-        if not self.enable_index or not kv_guard:
+        if not self.enable_index or not self._kv_guard:
             return dict(self._mem_guard)
         guard: dict = {}
         for k, v in _iter_prefix(self._kv_guard, "guard", b""):
@@ -353,11 +338,7 @@ class ArchivistDatabase:
             pretty_json=False,
             drive_type=drive_override,
         )
-        try:
-            dt = store.drive_type
-        except AttributeError:
-            dt = "unknown"
-
+        dt = store.drive_type
         log.info(f"Archivist LMDB storage initialized at '{path}' [Drive Profile: {dt.upper()}]")
         return store
 

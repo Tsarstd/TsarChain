@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
-from decimal import Decimal, ROUND_DOWN, InvalidOperation
+from decimal import Decimal
 from typing import Optional, Dict, Any
 
 # ---------------- Local Project (Wallet Only) ----------------
@@ -11,6 +11,7 @@ from ..security.data_security import Wallet
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
+from tsarchain.utils.helpers import parse_amount_sats
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -20,25 +21,21 @@ class SendService:
     @staticmethod
     def parse_amount_str(raw: str) -> tuple[int, str]:
         if not raw:
-            raise ValueError("Amount kosong.")
-        txt = raw.replace(" ", "").replace("_", "").replace(",", ".")
-        if txt.startswith("."):
-            txt = "0" + txt
+            raise ValueError("Empty Amount")
         try:
-            dec = Decimal(txt)
-        except InvalidOperation:
-            log.error("Invalid amount format")
-            raise ValueError("Invalid amount format")
-        if dec <= 0:
+            sats = parse_amount_sats(raw)
+        except ValueError as exc:
+            msg = str(exc)
+            if "Amount format invalid" in msg or "Invalid" in msg:
+                log.error("Invalid amount format")
+                raise ValueError("Invalid amount format") from exc
+            raise
+        if sats <= 0:
             raise ValueError("Amount must be > 0.")
-        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
-        dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
-        sats = int(dec_q * Decimal(CFG.TSAR))
         if sats < int(CFG.DUST_THRESHOLD_SAT):
-            raise ValueError(f"Amount terlalu kecil (< {CFG.DUST_THRESHOLD_SAT} sat, dust).")
-        coin_str = format(dec_q, "f").rstrip("0").rstrip(".")
-        if not coin_str:
-            coin_str = "0"
+            raise ValueError(f"Amount too small (< {CFG.DUST_THRESHOLD_SAT} sat, dust).")
+        dec = Decimal(sats) / Decimal(CFG.TSAR)
+        coin_str = format(dec, "f").rstrip("0").rstrip(".") or "0"
         return sats, coin_str
 
     @staticmethod

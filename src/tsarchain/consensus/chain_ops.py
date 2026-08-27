@@ -10,7 +10,6 @@ from typing import List, TYPE_CHECKING
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
-from ..mempool.pool import TxPool
 from ..utils import config as CFG
 from .genesis import GENESIS_HASH
 from ..utils.helpers import bits_to_target, merkle_root
@@ -65,8 +64,6 @@ class ChainOperations:
     def _notify_tip(self, height: int, blk_hash: str):
         try:
             self.blockchain.notify_tip_changed(height, blk_hash)
-        except (AttributeError, TypeError):
-            pass
         except Exception:
             log.exception("[_notify_tip] callback error")
 
@@ -169,10 +166,7 @@ class ChainOperations:
         self.blockchain.total_supply = other_chain.total_supply
         self.blockchain.total_blocks = len(self.blockchain.chain)
         try:
-            if callable(self.blockchain._rebuild_hash_cache):
-                self.blockchain._rebuild_hash_cache()
-        except (AttributeError, TypeError):
-            pass
+            self.blockchain._rebuild_hash_cache()
         except Exception:
             log.exception("[replace_with] hash cache rebuild failed")
 

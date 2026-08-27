@@ -27,42 +27,29 @@ class UTXOValidationMixin:
         try:
             prev_txid = tx_input.txid
         except AttributeError:
-            try:
-                prev_txid = tx_input.prev_tx
-            except AttributeError:
-                prev_txid = None
+            prev_txid = None
         if prev_txid is None:
             try:
                 prev_txid = tx_input.prev_tx
             except AttributeError:
-                pass
-            
+                prev_txid = None
         prev_txid_hex = self._txid_hex(prev_txid)
         try:
             vout = tx_input.vout
         except AttributeError:
-            try:
-                vout = tx_input.prev_index
-            except AttributeError:
-                vout = None
+            vout = None
         if vout is None:
             try:
                 vout = tx_input.prev_index
             except AttributeError:
-                pass
-        if vout is not None:
-            vout = int(vout)
-        return prev_txid_hex, vout
+                vout = None
+        return prev_txid_hex, int(vout) if vout is not None else None
 
 
     def _is_unspendable_opreturn(self, tx_out) -> bool:
-        try:
-            spk = tx_out.script_pubkey
-        except AttributeError:
-            spk = tx_out
+        spk = tx_out.script_pubkey if tx_out.script_pubkey is not None else tx_out
         if spk is None:
             return False
-    
         b = self._parse_script_bytes(spk)
         return len(b) >= 1 and b[0] == 0x6A
 
@@ -151,13 +138,9 @@ class UTXOValidationMixin:
 
     def _build_compact_outputs(self, tx) -> list:
         outputs_compact = []
-        outputs = tx.outputs or []
-        for txout in outputs:
+        for txout in (tx.outputs or []):
             amt = int(txout.amount or 0)
-            try:
-                spk_obj = txout.script_pubkey
-            except AttributeError:
-                spk_obj = txout
+            spk_obj = txout.script_pubkey if txout.script_pubkey is not None else txout
             spk_bytes = self._parse_script_bytes(spk_obj)
             outputs_compact.append((amt, spk_bytes))
         return outputs_compact
@@ -211,28 +194,8 @@ class UTXOValidationMixin:
 
 
     def _process_graffiti_for_txs(self, txs, block_height: int, block_hash: str | None) -> None:
-        try:
-            script_to_addr = self.script_to_address
-        except AttributeError:
-            script_to_addr = None
-        for tx in txs or []:
-            outputs_info = []
-            outputs = tx.outputs or []
-            for tx_out in outputs:
-                try:
-                    raw_spk = tx_out.script_pubkey
-                except AttributeError:
-                    raw_spk = tx_out
-                script_bytes = self._parse_script_bytes(raw_spk)
-                amount = int(tx_out.amount or 0)
-                if callable(script_to_addr):
-                    address = script_to_addr(raw_spk)
-                else:
-                    try:
-                        address = tx_out.address
-                    except AttributeError:
-                        address = None
-                outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
+        for tx in (txs or []):
+            outputs_info = [self._build_output_info(tx_out) for tx_out in (tx.outputs or [])]
             self._record_graffiti_event(tx, outputs_info, block_height, block_hash)
 
 
@@ -299,14 +262,11 @@ class UTXOValidationMixin:
             raw_spk = tx_out.script_pubkey
         except AttributeError:
             raw_spk = tx_out
+        if raw_spk is None:
+            raw_spk = tx_out
         script_bytes = self._parse_script_bytes(raw_spk)
-        try:
-            script_to_addr = self.script_to_address
-        except AttributeError:
-            script_to_addr = None
-        if callable(script_to_addr):
-            address = script_to_addr(raw_spk)
-        else:
+        address = H.script_to_address(raw_spk)
+        if address is None:
             try:
                 address = tx_out.address
             except AttributeError:
@@ -462,34 +422,16 @@ class UTXOValidationMixin:
                     self._apply_tx_remove_prevout(utxos, prev_txid_hex, vout)
 
         outputs_info: list[dict[str, Any]] = []
-        outputs = tx.outputs or []
-        for n, txout in enumerate(outputs):
-            try:
-                spk = txout.script_pubkey
-            except AttributeError:
-                spk = txout
+        for n, txout in enumerate(tx.outputs or []):
+            spk = txout.script_pubkey if txout.script_pubkey is not None else txout
             b = self._parse_script_bytes(spk)
             if len(b) >= 1 and b[0] == 0x6A:
                 continue
 
             amount = int(txout.amount or 0)
-            try:
-                spk_hex = spk.serialize().hex()
-            except (AttributeError, TypeError):
-                if type(spk) in (bytes, bytearray):
-                    spk_hex = bytes(spk).hex()
-                elif type(spk) is str:
-                    spk_hex = spk
-                else:
-                    spk_hex = ""
-
-            try:
-                script_to_addr = self.script_to_address
-            except AttributeError:
-                script_to_addr = None
-            if callable(script_to_addr):
-                address = script_to_addr(spk)
-            else:
+            spk_hex = b.hex() if b else ""
+            address = H.script_to_address(spk)
+            if address is None:
                 try:
                     address = txout.address
                 except AttributeError:

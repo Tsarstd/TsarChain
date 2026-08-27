@@ -472,7 +472,6 @@ MAX_FLUFF_DELAY_S         = 6.0
 
 # ---- SYNC INFO CADENCE ----
 SYNC_INFO_MIN_INTERVAL           = 60  # seconds between sync-info gossip messages
-SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0  # slower sync-info rate for bootstrap node
 
 
 # ---- REPLAY GUARDS ----
@@ -682,11 +681,6 @@ STOR_GET_RL_IP_BURST       = 10  # STOR_GET_BY_ART per IP burst
 STOR_GET_RL_WINDOW_S       = 10  # seconds window for get limiter
 STOR_GET_RL_BACKOFF_S      = 10  # backoff after get limiter trips
 
-STOR_ADMIN_RL_IP_BURST     = 8   # admin/node calls (INDEX/GC/PAID/PROOF) per IP burst
-STOR_ADMIN_RL_WINDOW_S     = 20  # seconds window for admin limiter
-STOR_ADMIN_RL_BACKOFF_S    = 20  # backoff after admin limiter trips
-
-BAN_UNKNOWN_STORAGE_RPC    = 90  # temp-ban when receiving unknown STOR_* message types
 STOR_POW_DIFFICULTY        = 20  # difficulty bits for PoW challenge on storage RPC
 
 
@@ -735,7 +729,7 @@ GRAFFITI_CHUNK_BYTES          = 4 * 1024 * 1024  # 4MB chunk size for streaming 
 # ---- ARCHIVIST ----
 STORAGE_DIR                        = "data/archivist/storage"  # folder holding uploaded storage blobs
 STORAGE_SIZE_INIT                  = 100 * 1024 * 1024  # initial storage size allocation (100MB)
-STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
+STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (128GB)
 RETENTION_GC_SEC                   = 30  # interval between retention garbage collection runs
 ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 135
 

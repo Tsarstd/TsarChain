@@ -20,7 +20,7 @@ def test_create_keypair(mock_save, tmp_path):
 
 @patch("archivist.connect._load_stor_peer_keys")
 @patch("archivist.connect._save_stor_peer_keys")
-@patch("archivist.connect.socket.socket")
+@patch("archivist.connect._connect_socket")
 @patch("archivist.connect.SecureChannel")
 def test_scan_nodes(mock_channel, mock_sock, mock_save, mock_load, tmp_path):
     # Mocking create_keypair implicitly via patching CFG
@@ -72,7 +72,7 @@ def test_rpc_init(mock_cp):
         rpc.set_address_override("bc1qtest")
 
 @patch("archivist.connect.create_keypair", return_value=("id", "0"*64, "0"*64))
-@patch("archivist.connect.socket.socket")
+@patch("archivist.connect._connect_socket")
 @patch("archivist.connect.SecureChannel")
 def test_rpc_connect(mock_chan, mock_sock, mock_cp):
     rpc = RPC()
@@ -93,7 +93,7 @@ def test_rpc_connect(mock_chan, mock_sock, mock_cp):
     assert rpc.node == ("127.0.0.1", 1234)
 
 @patch("archivist.connect.create_keypair", return_value=("id", "0"*64, "0"*64))
-@patch("archivist.connect.socket.socket")
+@patch("archivist.connect._connect_socket")
 @patch("archivist.connect.SecureChannel")
 def test_rpc_call(mock_chan, mock_sock, mock_cp):
     rpc = RPC()

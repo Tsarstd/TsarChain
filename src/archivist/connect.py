@@ -8,7 +8,6 @@ This channel is used by archivists for handshakes, info, and STOR_* RPCs to node
 
 import time
 import json
-import socket
 import hashlib
 import threading
 
@@ -26,7 +25,7 @@ from tsarchain.network.protocol import (
     verify_and_unwrap,
 )
 from tsarchain.utils import config as CFG
-from tsarchain.utils.helpers import hash160
+from tsarchain.utils.helpers import hash160, connect_tcp_socket
 from tsarchain.storage.kv import iter_prefix, batch
 from tsarchain.network.peers_storage import load_node_key, save_node_key
 
@@ -119,11 +118,7 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
     return found
 
 
-def _connect_socket(host: str, port: int, timeout: float) -> socket.socket:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(timeout)
-    s.connect((host, port))
-    return s
+_connect_socket = connect_tcp_socket
 
 
 def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ctx: dict) -> bool:

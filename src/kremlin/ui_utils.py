@@ -134,3 +134,14 @@ def insert_treeview_chunked(app_instance, tv, rows: list[tuple[tuple, tuple]], s
     if end < len(rows):
         app_instance.root.after(0, insert_treeview_chunked, app_instance, tv, rows, end, chunk)
 
+
+def widget_exists(w: tk.Misc | None) -> bool:
+    """Check if a Tkinter widget exists and is valid."""
+    if w is None:
+        return False
+    try:
+        return bool(w.winfo_exists())
+    except (tk.TclError, AttributeError):
+        return False
+
+
