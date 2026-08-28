@@ -41,7 +41,7 @@ from kremlin.services.contact_management import ContactManager
 from kremlin.services.explorer_providers import get_explorer_providers
 
 # ---------------- UI Utility ----------------
-from kremlin.ui_utils import show_toast
+from kremlin.ui_utils import show_toast, widget_exists
 from kremlin.ui_state import BusyManager
 from kremlin.theme import get_theme, install_ttk_styles, FONT
 
@@ -326,9 +326,7 @@ class KremlinWalletGUI(WalletsMixin):
         if self.navigator:
             self.navigator.refresh_styles(self._active_tab or "", self.sidebar_bg, self.sidebar_active, self.fg, active_fg)
 
-    @staticmethod
-    def _widget_exists(widget) -> bool:
-        return bool(widget) and widget.winfo_exists()
+    _widget_exists = staticmethod(widget_exists)
 
     def _build_layout(self) -> None:
         self.sidebar_frame = tk.Frame(self.root, bg=self.sidebar_bg, width=100)
@@ -352,10 +350,7 @@ class KremlinWalletGUI(WalletsMixin):
 
         self.navigator.add_theme_toggle(self.toggle_theme)
 
-        try:
-            palette = self.theme_set.palette
-        except AttributeError:
-            palette = None
+        palette = self.theme_set.palette if self.theme_set else None
         offline_color = palette.danger if palette else "#d41c1c"
         self.conn_status = self.navigator.add_connection_status(offline_color)
 
@@ -369,10 +364,7 @@ class KremlinWalletGUI(WalletsMixin):
     def _set_conn_status(self, ok: bool) -> None:
         prev = self._conn_online
         self._conn_online = bool(ok)
-        try:
-            palette = self.theme_set.palette
-        except AttributeError:
-            palette = None
+        palette = self.theme_set.palette if self.theme_set else None
         ok_color = palette.success if palette else "#17c964"
         fail_color = palette.danger if palette else "#d41c1c"
         if self._conn_online:
@@ -594,13 +586,9 @@ class KremlinWalletGUI(WalletsMixin):
         if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
             self._chat_poll_job = None
-        if self.chat_tab:
-            try:
-                if self.chat_tab._chat_poll_job:
-                    self.root.after_cancel(self.chat_tab._chat_poll_job)
-                    self.chat_tab._chat_poll_job = None
-            except AttributeError:
-                pass
+        if self.chat_tab and self.chat_tab._chat_poll_job:
+            self.root.after_cancel(self.chat_tab._chat_poll_job)
+            self.chat_tab._chat_poll_job = None
         for fr in self.frames.values():
             fr.pack_forget()
         if self.explore_panel:
@@ -656,38 +644,30 @@ class KremlinWalletGUI(WalletsMixin):
         self._activate_tab("graffiti")
 
     def show_chat_frame(self) -> None:
-            if not self._is_wallet_ready():
-                return self._show_locked_screen("Chat")
+        if not self._is_wallet_ready():
+            return self._show_locked_screen("Chat")
 
-            self._hide_all_frames()
-            chat_frame = self.frames.get("chat")
-            chat_tab_frame = None
+        self._hide_all_frames()
+        chat_frame = self.frames.get("chat")
+        chat_tab_frame = self.chat_tab.frame if self.chat_tab else None
+        need_build = (
+            chat_frame is None
+            or chat_tab_frame is None
+            or not widget_exists(chat_tab_frame)
+        )
+        if need_build:
+            parent = tk.Frame(self.main, bg=self.bg)
+            self.frames["chat"] = parent
             if self.chat_tab:
-                try:
-                    chat_tab_frame = self.chat_tab.frame
-                except AttributeError:
-                    chat_tab_frame = None
-            need_build = (
-                chat_frame is None
-                or chat_tab_frame is None
-                or not self._widget_exists(chat_tab_frame)
-            )
-            if need_build:
-                parent = tk.Frame(self.main, bg=self.bg)
-                self.frames["chat"] = parent
-                if self.chat_tab:
-                    self.chat_tab.set_palette(self.theme_set.chat)
-                    self.chat_tab.build(parent)
-                chat_frame = parent
-            chat_frame.pack(fill=tk.BOTH, expand=True)
-            self._activate_tab("chat")
-            if self.chat_tab:
-                self.chat_tab.reload_addresses()
-                try:
-                    if self.chat_tab._chat_online:
-                        self.chat_tab._chat_schedule_next()
-                except AttributeError:
-                    pass
+                self.chat_tab.set_palette(self.theme_set.chat)
+                self.chat_tab.build(parent)
+            chat_frame = parent
+        chat_frame.pack(fill=tk.BOTH, expand=True)
+        self._activate_tab("chat")
+        if self.chat_tab:
+            self.chat_tab.reload_addresses()
+            if self.chat_tab._chat_online:
+                self.chat_tab._chat_schedule_next()
     
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():

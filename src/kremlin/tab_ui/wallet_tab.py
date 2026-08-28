@@ -166,22 +166,11 @@ class CreateWalletDialog(tk.Toplevel):
             s = self.ent_pwd.get()
             match = (s != "") and (s == self.ent_pwd2.get())
             ok_all, details = Security.validate_password_strength(s)
-            score, label = 0, "weak"
-            try:
+            if type(details) is dict:
                 score = int(details.get("score", 0))
                 label = str(details.get("label", "weak"))
-            except AttributeError:
-                try:
-                    for x in details:
-                        try:
-                            score = int(x)
-                        except (ValueError, TypeError):
-                            label = str(x)
-                except TypeError:
-                    try:
-                        score = int(details)
-                    except (ValueError, TypeError):
-                        pass
+            else:
+                score, label = 0, "weak"
             if not label or type(label) is not str:
                 label = ("very weak","weak","fair","good","strong","excellent")[max(0,min(5,score))]
 
@@ -405,10 +394,7 @@ class WalletsMixin:
         self.actions_mb["menu"] = act_menu
         self.actions_mb.pack(side=tk.LEFT, padx=6)
 
-        try:
-            wallets_len = len(self.wallets)
-        except AttributeError:
-            wallets_len = 0
+        wallets_len = len(self.wallets or [])
         self.wallet_count_label = tk.Label(
             right, text=f"Wallets: {wallets_len}",
             bg=self.bg, fg=self.muted, font=("Consolas", 10)
@@ -439,11 +425,7 @@ class WalletsMixin:
         for c in self.wallet_list_frame.winfo_children():
             c.destroy()
 
-        try:
-            wallets_list = self.wallets or []
-        except AttributeError:
-            wallets_list = []
-        for addr in wallets_list:
+        for addr in (self.wallets or []):
             card = tk.Frame(self.wallet_list_frame, bg=self.panel_bg, padx=12, pady=10)
             card.pack(fill=tk.X, padx=6, pady=6)
 
@@ -701,29 +683,13 @@ class WalletsMixin:
 
         self.wallets = []
         save_registry(self.wallets)
-
-        try:
-            self._ks_pwd_cache = None
-        except AttributeError:
-            pass
-
+        self._ks_pwd_cache = None
         self._wallets_after_change()
-        try:
+        if self.contact_mgr:
             self.contact_mgr._contacts = {}
-        except AttributeError:
-            pass
-        try:
-            self.contacts = {}
-        except AttributeError:
-            pass
-        try:
-            self._contact_pairs = []
-        except AttributeError:
-            pass
-        try:
-            self._refresh_contacts_ui()
-        except (AttributeError, TypeError):
-            pass
+        self.contacts = {}
+        self._contact_pairs = []
+        self._refresh_contacts_ui()
 
         summary_lines = []
         if removed_labels:

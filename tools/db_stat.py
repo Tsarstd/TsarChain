@@ -11,12 +11,11 @@ reconfig = getattr(sys.stdout, 'reconfigure', None)
 if callable(reconfig):
     reconfig(encoding='utf-8', errors='replace')
 
+import math
 import lmdb
 import struct
-import argparse
-import json
-import math
 import shutil
+import argparse
 import colorama
 import tempfile
 from typing import Any

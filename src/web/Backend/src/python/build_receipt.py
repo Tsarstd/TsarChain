@@ -400,24 +400,12 @@ class PaymentReceiptGenerator:
         base_x = 530
         base_y = 100
         
-        try:
-            offset_x = rotated_stamp.offset_x
-        except AttributeError:
-            offset_x = 0
-        try:
-            offset_y = rotated_stamp.offset_y
-        except AttributeError:
-            offset_y = 0
-        
-        pos_x = base_x + offset_x
-        pos_y = base_y + offset_y
-        
         original_size = 180
         width_diff = rotated_stamp.width - original_size
         height_diff = rotated_stamp.height - original_size
         
-        pos_x -= width_diff // 2
-        pos_y -= height_diff // 2
+        pos_x = base_x - (width_diff // 2)
+        pos_y = base_y - (height_diff // 2)
         
         img_width, img_height = img.size
         stamp_width, stamp_height = rotated_stamp.size

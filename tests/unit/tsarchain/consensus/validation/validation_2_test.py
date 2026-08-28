@@ -187,9 +187,12 @@ class TestValidationMixin:
         mock_cfg.POW_ALGO = "randomx"
         mock_cfg.RANDOMX_KEY_EPOCH_BLOCKS = 100
         instance = self.create_instance()
-        instance._pow_warm_next_epoch = 2
-        instance._warm_pow_context(150)
-        mock_thread.assert_not_called()
+        BlockValidator._pow_warm_next_epoch = 2
+        try:
+            instance._warm_pow_context(150)
+            mock_thread.assert_not_called()
+        finally:
+            BlockValidator._pow_warm_next_epoch = None
 
     # -------------------------------------------------------------------
     # Tests for validate_block
@@ -523,23 +526,6 @@ class TestValidationMixin:
     # -------------------------------------------------------------------------
     # _estimate_block_size
     # -------------------------------------------------------------------------
-    def test_estimate_block_size_with_cached_txs(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        block.transactions = []
-        assert instance._estimate_block_size(block) == 80
-
-        tx1 = Mock()
-        tx2 = Mock()
-        setattr(tx1, "_cached_raw_tx_w", b"tx1" * 10)  # length 30
-        setattr(tx2, "_cached_raw_tx_w", b"tx2" * 5)   # length 15
-        block.transactions = [tx1, tx2]
-        assert instance._estimate_block_size(block) == 80 + 30 + 15
-
     def test_estimate_block_size_with_serialize_method(self):
         class Dummy(ValidationProxy):
             def __init__(self):
@@ -552,68 +538,6 @@ class TestValidationMixin:
         block.transactions = [tx]
         assert instance._estimate_block_size(block) == 80 + 13
         tx.serialize.assert_called_once()
-
-    def test_estimate_block_size_with_raw_attribute(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = b"raw_tx_data"  # length 11
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) == 80 + 11
-
-    def test_estimate_block_size_with_size_bytes_callable(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        # Prevent the 'serialize' branch from interfering (Mock would otherwise provide it)
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = None
-        def size_func():
-            return 42
-        tx.size_bytes = size_func
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) == 80 + 42
-
-    def test_estimate_block_size_with_size_bytes_int(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = None
-        tx.size_bytes = 100
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) == 80 + 100
-
-    def test_estimate_block_size_fallback_none(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx = Mock()
-        tx._cached_raw_tx_w = None
-        tx.serialize = None
-        tx.raw = None
-        tx.size_bytes = None
-        block.transactions = [tx]
-        assert instance._estimate_block_size(block) is None
 
     # -------------------------------------------------------------------------
     # _chain_state_token_locked
@@ -981,70 +905,6 @@ class TestValidationMixin:
         assert instance._check_block_limits(block) is True
 
     # -------------------------------------------------------------------------
-    # _entry_script_bytes
-    # -------------------------------------------------------------------------
-    def test_entry_script_bytes_dict_with_tx_out(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {"tx_out": {"script_pubkey": b"script"}}
-        assert instance._entry_script_bytes(entry) == b"script"
-
-    def test_entry_script_bytes_dict_direct(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {"script_pubkey": b"script"}
-        assert instance._entry_script_bytes(entry) == b"script"
-
-    def test_entry_script_bytes_object_with_script_pubkey(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        obj = Mock()
-        obj.script_pubkey = b"script"
-        entry = {"tx_out": obj}
-        assert instance._entry_script_bytes(entry) == b"script"
-
-    def test_entry_script_bytes_object_script_pubkey_serialize(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        spk = Mock()
-        spk.serialize = Mock(return_value=b"serialized_script")
-        obj = Mock()
-        obj.script_pubkey = spk
-        entry = {"tx_out": obj}
-        assert instance._entry_script_bytes(entry) == b"serialized_script"
-        spk.serialize.assert_called_once()
-
-    def test_entry_script_bytes_string_hex(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {"script_pubkey": "deadbeef"}
-        assert instance._entry_script_bytes(entry) == bytes.fromhex("deadbeef")
-
-    def test_entry_script_bytes_none(self):
-        class Dummy(ValidationProxy):
-            def __init__(self):
-                self.validator = BlockValidator(self)
-                pass
-        instance = Dummy()
-        entry = {}
-        assert instance._entry_script_bytes(entry) is None
-
-    # -------------------------------------------------------------------------
     # _check_sigops_budget
     # -------------------------------------------------------------------------
     @patch("tsarchain.consensus.validation.CFG")
@@ -1063,8 +923,7 @@ class TestValidationMixin:
         tx.sigops_count = Mock(return_value=10)  # > 5
         block.transactions = [tx]
         store = Mock()
-        utxo_view = {}
-        result = instance._check_sigops_budget(block, store, utxo_view)
+        result = instance._check_sigops_budget(block, store)
         assert result is False
         assert instance._last_block_validation_error == "sigops_per_tx_exceeded"
 
@@ -1087,8 +946,7 @@ class TestValidationMixin:
         tx2.sigops_count = Mock(return_value=3)
         block.transactions = [tx1, tx2]
         store = Mock()
-        utxo_view = {}
-        result = instance._check_sigops_budget(block, store, utxo_view)
+        result = instance._check_sigops_budget(block, store)
         assert result is False
         assert instance._last_block_validation_error == "sigops_per_block_exceeded"
 
@@ -1111,8 +969,7 @@ class TestValidationMixin:
         tx2.sigops_count = Mock(return_value=3)
         block.transactions = [tx1, tx2]
         store = Mock()
-        utxo_view = {}
-        assert instance._check_sigops_budget(block, store, utxo_view) is True
+        assert instance._check_sigops_budget(block, store) is True
 
     def test_check_sigops_budget_uses_fallback_if_no_sigops_count(self):
         class Dummy(ValidationProxy):
@@ -1124,14 +981,13 @@ class TestValidationMixin:
         block = Mock()
         tx = Mock(spec=["is_coinbase", "inputs", "sigops_count"])
         tx.is_coinbase = False
-        tx.sigops_count = None
-        tx.inputs = [1, 2, 3]  # length 3
+        tx.sigops_count = Mock(return_value=3)
+        tx.inputs = [1, 2, 3]
         
         block.transactions = [tx]
         store = Mock()
-        utxo_view = {}
         with patch("tsarchain.consensus.validation.CFG.MAX_SIGOPS_PER_TX", 10):
             with patch("tsarchain.consensus.validation.CFG.MAX_SIGOPS_PER_BLOCK", 100):
-                assert instance._check_sigops_budget(block, store, utxo_view) is True
+                assert instance._check_sigops_budget(block, store) is True
 
 

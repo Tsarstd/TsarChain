@@ -23,7 +23,7 @@ def test_parse_amount_str_valid():
     assert fmt == "0.5"
     
 def test_parse_amount_str_invalid():
-    with pytest.raises(ValueError, match="Amount kosong"):
+    with pytest.raises(ValueError, match="Empty Amount"):
         SendService.parse_amount_str("")
         
     with pytest.raises(ValueError, match="Invalid amount format"):

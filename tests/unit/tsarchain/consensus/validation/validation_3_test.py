@@ -34,6 +34,11 @@ class ValidationProxy:
 unit test for validation.py
 """
 
+class FakeTxOut:
+    def __init__(self, amount, script_pubkey):
+        self.amount = amount
+        self.script_pubkey = script_pubkey
+
 # =============================================================================
 # CATEGORY 3: VALIDATION COVERAGE TESTS
 # =============================================================================
@@ -84,6 +89,7 @@ def test_compute_txids_for_block():
     c = CovP1DummyConsensus()
     c._serialize_tx_cached = Mock(return_value=b"raw")
     tx = CovP1DummyTx()
+    tx.txid = b"txidbytes"
     b = CovP1DummyBlock(transactions=[tx])
     
     with patch("tsarchain.consensus.validation.H") as mock_H:
@@ -228,25 +234,6 @@ def test_validate_tx_inputs_outputs(mocker):
         assert c._validate_transactions(b) is False
         assert c._last_block_validation_error == "tx_outputs_exceed_limit"
 
-# --- legacy lookup ---
-def test_legacy_lookup():
-    from tsarchain.consensus.validation import BlockValidator
-    import threading
-    class C(ValidationProxy):
-        def __init__(self): self.lock = threading.Lock()
-    c = C()
-    
-    b = CovP1DummyBlock(transactions=[CovP1DummyTx(is_coinbase=True), CovP1DummyTx(inputs=[CovP1DummyTx(txid="aa"*32, vout=0)])])
-    
-    snap = {
-        f"{'aa'*32}:0": {"amount": 10, "script_pubkey": b"x"}
-    }
-    
-    def dummy_legacy_lookup(snapshot_map, prev_txid_hex, prev_index):
-        # We will directly call the nested function logic to test it.
-        # But wait, it's defined inside `_validate_transactions`. We can just pass the snapshot.
-        pass
-
 
 # --- Tests from validation_coverage_part2_test.py ---
 class CovP2DummyBlock:
@@ -360,7 +347,11 @@ def test_validate_graffiti_various_spk(mocker):
             b.transactions[1].inputs = [Mock(txid=b"prev", vout=0)]
             mock_utxo = Mock()
             c.ensure_utxodb.return_value = mock_utxo
-            mock_utxo.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s", "is_coinbase": False, "block_height": 0}
+            mock_utxo.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             
             assert c._validate_transactions(b) is True
 
@@ -449,7 +440,7 @@ class CovP3DummyTx:
         self.block_id = None
         self._cached_raw_tx_nowit = None
         self._cached_raw_tx_w = None
-        self.sigops_count = None
+        self.sigops_count = lambda _lookup_fn: len(self.inputs)
         self.raw = None
         self.size_bytes = None
         for k, v in kwargs.items():
@@ -478,35 +469,6 @@ class CovP3DummyConsensus(ValidationProxy):
             return entry.get("script_pubkey")
         return getattr(entry, "script_pubkey", None)
 
-def test_legacy_lookup():
-    c = CovP3DummyConsensus()
-    txid_hex = "a"*64
-    entry = {"amount": 10, "script_pubkey": b"s", "is_coinbase": False, "block_height": 0}
-    
-    # 1. key string match
-    assert c._legacy_lookup({f"{txid_hex}:0": entry}, txid_hex, 0) == entry
-    
-    # 2. key.lower() normalization match
-    assert c._legacy_lookup({f"{txid_hex.lower()}:0": entry}, txid_hex.upper(), 0) == entry
-    
-    # 3. key encoded as utf-8
-    assert c._legacy_lookup({f"{txid_hex}:0".encode("utf-8"): entry}, txid_hex, 0) == entry
-    
-    # 4. direct txid match
-    assert c._legacy_lookup({txid_hex: entry}, txid_hex, 0) == entry
-    
-    # 5. tuple key string
-    assert c._legacy_lookup({(txid_hex, 0): entry}, txid_hex, 0) == entry
-    
-    # 6. tuple key bytes
-    assert c._legacy_lookup({(bytes.fromhex(txid_hex), 0): entry}, txid_hex, 0) == entry
-    
-    # 7. None fallback
-    assert c._legacy_lookup({}, txid_hex, 0) is None
-    
-    # 8. Not a dict
-    assert c._legacy_lookup("not a dict", txid_hex, 0) is None
-
 def test_check_sigops_budget():
     c = CovP3DummyConsensus()
     
@@ -525,18 +487,18 @@ def test_check_sigops_budget():
         cfg_mock.MAX_SIGOPS_PER_BLOCK = 20
         
         # total sigops = 3 + 5 = 8 <= 20. Pass.
-        assert c._check_sigops_budget(b, store, None) is True
+        assert c._check_sigops_budget(b, store) is True
         
         # Exceed per tx
         tx1.inputs = [1]*11 # 11 sigops
-        assert c._check_sigops_budget(b, store, None) is False
+        assert c._check_sigops_budget(b, store) is False
         assert c._last_block_validation_error == "sigops_per_tx_exceeded"
         
         # Exceed per block
         tx1.inputs = [1]*9 # 9 sigops
         cfg_mock.MAX_SIGOPS_PER_BLOCK = 12
         # total = 9 + 5 = 14 > 12
-        assert c._check_sigops_budget(b, store, None) is False
+        assert c._check_sigops_budget(b, store) is False
         assert c._last_block_validation_error == "sigops_per_block_exceeded"
 
 
@@ -584,52 +546,6 @@ class CovP4DummyBlock:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-def test_legacy_lookup_fallback():
-    c = CovP4DummyConsensus()
-    c.ensure_utxodb = Mock(return_value=None)
-    
-    cb = CovP4DummyTx(is_coinbase=True, txid=b"cb", txid_hex="cb")
-    tx1 = CovP4DummyTx(is_coinbase=False, txid=b"tx1", txid_hex="tx1")
-    tx1.inputs = [Mock(txid=b"a"*32, vout=0)]
-    
-    b = CovP4DummyBlock(transactions=[cb, tx1])
-    
-    with patch("tsarchain.consensus.validation.CFG") as cfg_mock:
-        cfg_mock.MAX_BLOCK_BYTES = 100000
-        cfg_mock.MAX_TX_VSIZE = 1000
-        cfg_mock.MIN_TX_VSIZE = 10
-        cfg_mock.MAX_TX_WEIGHT = 4000
-        cfg_mock.MIN_TX_WEIGHT = 40
-        cfg_mock.MAX_TX_INPUTS = 10
-        cfg_mock.MAX_TX_OUTPUTS = 10
-        cfg_mock.GRAFFITI_MAGIC = b"G"
-        cfg_mock.MAX_GRAFFITI_OPRET = 100
-        cfg_mock.COINBASE_MATURITY = 1
-        cfg_mock.MAX_SUPPLY = 1000000
-        
-        with patch("tsarchain.consensus.validation.H") as mock_H:
-            mock_H.compute_tx_weight_vsize.return_value = (100, 50, 10, 10)
-            mock_H.last_pushdata.return_value = None
-            mock_H.native_validate_block_txs_compact.return_value = (True, None, [10])
-            mock_H.tx_to_compact_tuple.return_value = None
-            c._serialize_tx_cached = Mock(return_value=b"x")
-            
-            store = Mock()
-            store.lookup_entry = None
-            txid_hex = "a"*64
-            tx1.inputs[0].txid = txid_hex
-            
-            # fallback string upper
-            store.utxos = {(txid_hex.upper(), 0): {"amount": 10, "script_pubkey": b"s", "is_coinbase": False, "block_height": 0}}
-            c._validate_transactions(b, utxo_store=store)
-            
-            # test vout mismatch in loop
-            store.utxos = {
-                (bytes.fromhex(txid_hex), 1): {"amount": 10}, 
-                (txid_hex.upper(), 0): {"amount": 10, "script_pubkey": b"s", "is_coinbase": False, "block_height": 0}
-            }
-            c._validate_transactions(b, utxo_store=store)
-
 def test_normalize_snapshot_objects():
     c = CovP4DummyConsensus()
     cb = CovP4DummyTx(is_coinbase=True, txid=b"cb", txid_hex="cb")
@@ -655,27 +571,12 @@ def test_normalize_snapshot_objects():
             c._serialize_tx_cached = Mock(return_value=b"x")
             
             store = Mock()
-            class CandidateObj:
-                def __init__(self):
-                    self.validator = BlockValidator(self)
-                    self.amount = 10
-                    self.script_pubkey = b"s"
-                    self.is_coinbase = False
-                    self.block_height = 0
-                    self.tx_out = self # recursive for branch
                     
-            store.lookup_entry = Mock(return_value=CandidateObj())
-            c._validate_transactions(b, utxo_store=store)
-            
-            class CandidateObjNoTxOut:
-                def __init__(self):
-                    self.validator = BlockValidator(self)
-                    self.amount = 10
-                    self.script_pubkey = b"s"
-                    self.is_coinbase = False
-                    self.block_height = 0
-                    self.tx_out = None
-            store.lookup_entry = Mock(return_value=CandidateObjNoTxOut())
+            store.lookup_entry = Mock(return_value={
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            })
             c._validate_transactions(b, utxo_store=store)
 
 def test_missing_txid_and_same_block_spend():
@@ -720,7 +621,11 @@ def test_missing_txid_and_same_block_spend():
             tx3 = CovP4DummyTx(is_coinbase=False, txid_hex="tx3")
             tx3.inputs = [Mock(txid="223344", vout=0), Mock(txid="223344", vout=0)]
             b3 = CovP4DummyBlock(transactions=[cb, tx3])
-            store.lookup_entry = Mock(return_value={"amount": 10, "script_pubkey": b"s"})
+            store.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             c._validate_transactions(b3, utxo_store=store)
 
 def test_build_payload_bytes_key():
@@ -820,9 +725,7 @@ def test_pow_ms_warning(mocker):
     
     store = Mock()
     c.ensure_utxodb = Mock(return_value=store)
-    store.lookup_entry = None
-    store.utxos = None
-    store.load_utxo_set = Mock(return_value={})
+    store.lookup_entry = Mock(return_value=None)
     
     b = CovP5DummyBlock()
     b._cached_hash = b"hash"
@@ -831,10 +734,10 @@ def test_pow_ms_warning(mocker):
     
     with patch("tsarchain.consensus.validation.CFG.DEBUG_BENCHMARKS", True):
         with patch("time.perf_counter", side_effect=[0, 0.2]):
-            c.validate_block(b)
+            result = c.validate_block(b)
     
-    # asserts that store.load_utxo_set was called (covers 130-132)
-    store.load_utxo_set.assert_called_once()
+    # validate_block completed through all mocked steps
+    assert result is True
 
 def test_native_validation_branches():
     c = CovP5DummyConsensus()
@@ -862,7 +765,11 @@ def test_native_validation_branches():
             c._serialize_tx_cached = Mock(return_value=b"x")
             
             store = Mock()
-            store.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s"}
+            store.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             
             # test native_validate_block_txs_compact returns False
             mock_H.native_validate_block_txs_compact.return_value = (False, "my_reason", None)
@@ -898,26 +805,18 @@ def test_check_sigops_budget_lookup():
     b = CovP5DummyBlock(transactions=[cb, tx1])
     
     store = Mock()
-    # explicitly remove lookup_entry
-    store.lookup_entry = None
+    store.lookup_entry = Mock(return_value={"script_pubkey": b"x"})
     
     with patch("tsarchain.consensus.validation.CFG") as cfg_mock:
         cfg_mock.MAX_SIGOPS_PER_TX = 10
         cfg_mock.MAX_SIGOPS_PER_BLOCK = 20
         
-        # Test utxo_view dict lookup
-        utxo_view = {"112233:0": {"script_pubkey": b"x"}}
-
-        def fake_sigops(lookup_fn):
-            res = lookup_fn(b"\x11\x22\x33", 0)
-            return 5 if res else 0
-        tx1.sigops_count = fake_sigops
-        
-        assert c._check_sigops_budget(b, store, utxo_view) is True
+        assert c._check_sigops_budget(b, store) is True
         
         # test entry is None
-        utxo_view_empty = {}
-        assert c._check_sigops_budget(b, store, utxo_view_empty) is True # fake_sigops returns 0
+        store.lookup_entry = Mock(return_value=None)
+        tx1.sigops_count = Mock(return_value=0)
+        assert c._check_sigops_budget(b, store) is True
 
 # --- Tests from validation_coverage_part6_test.py ---
 class CovP6DummyTx:
@@ -1001,7 +900,11 @@ def test_spk_to_address_p2wsh():
             mock_H.native_validate_block_txs_compact.return_value = (True, None, None)
             mock_H.last_pushdata.return_value = None
             store = Mock()
-            store.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s"}
+            store.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             
             with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
                 mock_graf.parse_from_script.return_value = None
@@ -1080,7 +983,7 @@ def test_check_sigops_budget_callable_lookup():
     with patch("tsarchain.consensus.validation.CFG") as cfg:
         cfg.MAX_SIGOPS_PER_TX = 10
         cfg.MAX_SIGOPS_PER_BLOCK = 20
-        c._check_sigops_budget(b, store, None)
+        c._check_sigops_budget(b, store)
         
         store.lookup_entry.assert_called_once_with("112233", 0)
 
@@ -1121,7 +1024,11 @@ def test_normalize_snapshot_entry_object():
             mock_H.native_validate_block_txs_compact.return_value = (True, None, None)
             mock_H.last_pushdata.return_value = None
             store = Mock()
-            store.lookup_entry.return_value = UtxoObj()
+            store.lookup_entry.return_value = {
+                'tx_out': UtxoObj(),
+                'is_coinbase': True,
+                'block_height': 100,
+            }
             with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
                 mock_graf.parse_from_script.return_value = None
                 c._validate_transactions(b, utxo_store=store)

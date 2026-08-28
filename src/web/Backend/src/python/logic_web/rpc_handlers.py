@@ -9,6 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from tsarchain.utils import config as CFG
+from tsarchain.utils.helpers import clean_remove_file
 from tsarchain.utils.benchmarks import benchmark
 
 from web.Backend.src.python import build_receipt, build_history_book
@@ -25,7 +26,6 @@ def rpc_receipt(client, txid: str):
     txid_norm = str(txid or "").strip().lower()
     if not txid_norm:
         return {"status": "error", "message": "Missing txid"}
-    
     file_path = db_files.get_receipt_file_path(txid_norm)
     cache_key = rpc_client._cache_key("receipt", txid_norm)
     cached = rpc_client._cache_get(cache_key, refresh_ttl=True)
@@ -38,25 +38,13 @@ def rpc_receipt(client, txid: str):
                     return result
             except FileNotFoundError:
                 pass
-            
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+            clean_remove_file(file_path)
         else:
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
+            clean_remove_file(file_path)
 
     tx_data = rpc_tx(client, txid_norm)
-    try:
-        if tx_data.get("error"):
-            return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
-    except AttributeError:
-        pass
+    if type(tx_data) is dict and tx_data.get("error"):
+        return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
     
     output_dir = CFG.WEB_RECEIPTS_DIR
     receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
@@ -345,15 +333,8 @@ def rpc_graffiti(client, art_id: str):
             break
         if error_ttl is None or ttl > error_ttl:
             error_ttl = ttl
-
-    try:
-        post = post_resp.get("post") or post_resp
-    except AttributeError:
-        post = None
-    try:
-        comments = comments_resp.get("comments")
-    except AttributeError:
-        comments = None
+    post = post_resp.get("post") or post_resp if type(post_resp) is dict else None
+    comments = comments_resp.get("comments") if type(comments_resp) is dict else None
     out = {"post": post, "comments": comments}
     if key and cache_ok:
         rpc_client._cache_set(key, out, error_ttl)
@@ -373,18 +354,12 @@ def rpc_graffiti_posts(client, opts: dict):
     cache_ok = True
     error_ttl = None
     if rpc_client._payload_has_error(resp):
-        try:
-            err_val = resp.get("error")
-        except AttributeError:
-            err_val = None
+        err_val = resp.get("error") if type(resp) is dict else None
         error_ttl = db_cache.get_error_cache_ttl(err_val)
         cache_ok = error_ttl is not None
-    try:
-        if resp.get("type") == "GRAFFITI_GET_POSTS":
-            out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset, "total": resp.get("total", 0)}
-        else:
-            out = {"posts": [], "limit": limit, "offset": offset, "total": 0}
-    except AttributeError:
+    if type(resp) is dict and resp.get("type") == "GRAFFITI_GET_POSTS":
+        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset, "total": resp.get("total", 0)}
+    else:
         out = {"posts": [], "limit": limit, "offset": offset, "total": 0}
     if cache_ok:
         rpc_client._cache_set(key, out, error_ttl)
@@ -396,17 +371,15 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
     storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
     cache_dir = (opts.get("cache_dir") or opts.get("cache") or "").strip() or None
     try:
-        max_bytes = int(opts.get("max_bytes") or 0) or int(CFG.GRAFFITI_MAX_SIZE_BYTES)
-    except Exception:
-        max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+        max_bytes = int(opts.get("max_bytes") or CFG.GRAFFITI_MAX_SIZE_BYTES)
+    except (TypeError, ValueError):
+        max_bytes = CFG.GRAFFITI_MAX_SIZE_BYTES
     try:
-        timeout = float(opts.get("timeout") or 0) or 5.0
-    except Exception:
-        timeout = 5.0
-
+        timeout = float(opts.get("timeout") or 10.0)
+    except (TypeError, ValueError):
+        timeout = 10.0
     if not art_id:
         return {"status": "error", "reason": "missing_art_id"}
-
     resp = db_media.fetch_graffiti_file(
         lambda payload: rpc_client._rpc_send(client, payload),
         art_id,
@@ -416,23 +389,14 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
         max_bytes=max_bytes,
         timeout=timeout,
     )
-    try:
-        out = {
+    if type(resp) is dict:
+        return {
             "status": resp.get("status") or "error",
             "reason": resp.get("reason"),
             "meta": resp.get("meta") or {},
             "cache_path": resp.get("cache_path"),
         }
-        return out
-    except AttributeError:
-        return {"status": "error", "reason": "bad_response"}
-    out = {
-        "status": resp.get("status") or "error",
-        "reason": resp.get("reason"),
-        "meta": resp.get("meta") or {},
-        "cache_path": resp.get("cache_path"),
-    }
-    return out
+    return {"status": "error", "reason": "bad_response"}
 
 
 def rpc_graffiti_media_meta(client, opts: dict, fallback_art_id: str | None = None):

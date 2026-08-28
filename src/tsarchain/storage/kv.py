@@ -60,11 +60,6 @@ def _init_native_store(name: str = "chain"):
         if store is not None:
             _native_stores[path] = store
             _native_store = store
-            try:
-                dt = store.drive_type
-            except AttributeError:
-                dt = "unknown"
-            log.info(f"Native LMDB storage initialized at '{path}' for '{name}' [Drive Profile: {str(dt or 'unknown').upper()}]")
         return store
 
 def sync(force: bool = False) -> None:

@@ -5,11 +5,15 @@
 
 from __future__ import annotations
 
+import os
 import json
 import string
+import socket
 import secrets
 import hashlib
+import contextlib
 import unicodedata
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from bech32 import bech32_decode, bech32_encode, convertbits
 from typing import Tuple, Optional
@@ -917,121 +921,79 @@ def sighash_bip143_compact(tx_tuple, input_index: int, script_code: bytes, value
     return bytes(_native_sighash_bip143_compact(tx_tuple, int(input_index), bytes(script_code), int(value_sat), int(sighash_type)))
 
 
+def parse_amount_sats(raw: str | int | float | Decimal, default: int = 0, *, min_sats: int = 0) -> int:
+    """Parse TSAR amount into atomic satoshis safely and accurately."""
+    if raw is None or raw == "":
+        return int(default)
+    if type(raw) is int:
+        sats = int(raw)
+    elif type(raw) is Decimal:
+        sats = int((raw * Decimal(CFG.TSAR)).to_integral_value(rounding=ROUND_DOWN))
+    else:
+        txt = str(raw).strip().replace(" ", "").replace("_", "").replace(",", ".")
+        if not txt:
+            return int(default)
+        if txt.startswith("."):
+            txt = "0" + txt
+        try:
+            dec = Decimal(txt)
+        except InvalidOperation as exc:
+            raise ValueError(f"Format jumlah tidak valid: {raw}") from exc
+        if dec <= 0:
+            if dec == 0 and int(default) == 0:
+                return 0
+            raise ValueError("Amount must be > 0.")
+        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
+        dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
+        sats = int(dec_q * Decimal(CFG.TSAR))
+        if sats <= 0:
+            raise ValueError("Jumlah terlalu kecil")
+
+    if min_sats > 0 and sats < min_sats:
+        raise ValueError(f"Amount terlalu kecil (< {min_sats} sat, dust).")
+    return sats
+
+
+def connect_tcp_socket(host: str, port: int, timeout: float = 5.0) -> socket.socket:
+    """Create and connect a TCP socket with a specified timeout."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect((host, int(port)))
+    return s
+
+
+def clean_remove_file(file_path: str | None) -> bool:
+    """Safely remove a file ignoring missing file errors without swallowing other exceptions."""
+    if not file_path:
+        return False
+    with contextlib.suppress(FileNotFoundError, OSError):
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            return True
+    return False
+
+
 def tx_to_compact_tuple(tx) -> tuple:
-    try:
-        version = int(tx.version)
-    except (AttributeError, TypeError, ValueError):
-        version = 1
-    try:
-        locktime = int(tx.locktime)
-    except (AttributeError, TypeError, ValueError):
-        locktime = 0
-    inputs_c = []
-    try:
-        inputs = tx.inputs or []
-    except AttributeError:
-        inputs = []
-    for txin in inputs:
-        try:
-            prev = txin.txid
-        except AttributeError:
-            try:
-                prev = txin.prev_tx
-            except AttributeError:
-                prev = None
-        if type(prev) in (bytes, bytearray):
-            prev_b = bytes(prev)
-        elif type(prev) is str:
-            try:
-                prev_b = bytes.fromhex(prev)
-            except ValueError:
-                prev_b = b""
-        else:
-            prev_b = b""
-
-        try:
-            vout = int(txin.vout)
-        except (AttributeError, TypeError, ValueError):
-            try:
-                vout = int(txin.prev_index)
-            except (AttributeError, TypeError, ValueError):
-                vout = 0
-        try:
-            seq = int(txin.sequence)
-        except (AttributeError, TypeError, ValueError):
-            seq = 0xFFFFFFFF
-
-        # Preserve scriptsig so coinbase txid includes block-specific entropy
-        script_sig_bytes = b""
-        try:
-            script_sig = txin.script_sig
-        except AttributeError:
-            script_sig = None
-        if script_sig is not None:
-            try:
-                script_sig_bytes = script_sig.serialize()
-            except (AttributeError, TypeError):
-                if type(script_sig) in (bytes, bytearray):
-                    script_sig_bytes = bytes(script_sig)
-                elif type(script_sig) is str:
-                    try:
-                        script_sig_bytes = bytes.fromhex(script_sig)
-                    except ValueError:
-                        script_sig_bytes = b""
-                else:
-                    script_sig_bytes = b""
-        wit_vec = []
-        try:
-            witness = txin.witness or []
-        except AttributeError:
-            witness = []
-        for w in witness:
-            if type(w) is str:
-                try:
-                    wit_vec.append(bytes.fromhex(w))
-                except ValueError:
-                    wit_vec.append(w.encode("utf-8"))
-            elif type(w) in (bytes, bytearray):
-                wit_vec.append(bytes(w))
-            else:
-                wit_vec.append(bytes(w or b""))
-        inputs_c.append((prev_b, vout, seq, script_sig_bytes, wit_vec))
-
-    outputs_c = []
-    try:
-        outputs = tx.outputs or []
-    except AttributeError:
-        outputs = []
-    for txout in outputs:
-        try:
-            amt = int(txout.amount or 0)
-        except (AttributeError, TypeError):
-            amt = 0
-        try:
-            spk = txout.script_pubkey
-        except AttributeError:
-            spk = None
-        if spk is not None:
-            try:
-                spk_b = spk.serialize()
-            except (AttributeError, TypeError):
-                if type(spk) in (bytes, bytearray):
-                    spk_b = bytes(spk)
-                elif type(spk) is str:
-                    try:
-                        spk_b = bytes.fromhex(spk)
-                    except ValueError:
-                        spk_b = b""
-                else:
-                    spk_b = b""
-        else:
-            spk_b = b""
-        outputs_c.append((amt, spk_b))
-
-    try:
-        is_cb = bool(tx.is_coinbase)
-    except AttributeError:
-        is_cb = False
+    version = int(tx.version) if tx.version is not None else 1
+    locktime = int(tx.locktime) if tx.locktime is not None else 0
+    inputs_c = [
+        (
+            to_bytes(txin.txid if txin.txid is not None else txin.prev_tx) or b"",
+            int(txin.vout if txin.vout is not None else txin.prev_index or 0),
+            int(txin.sequence if txin.sequence is not None else 0xFFFFFFFF),
+            extract_script_bytes(txin.script_sig) or b"",
+            [to_bytes(w) for w in (txin.witness or []) if w is not None],
+        )
+        for txin in (tx.inputs or [])
+    ]
+    outputs_c = [
+        (
+            int(txout.amount or 0),
+            extract_script_bytes(txout.script_pubkey) or extract_script_bytes(txout) or b"",
+        )
+        for txout in (tx.outputs or [])
+    ]
+    is_cb = bool(tx.is_coinbase)
     tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, is_cb)
     txid = txid_from_compact(tx_tuple)
     return (version, locktime, inputs_c, outputs_c, txid, is_cb)

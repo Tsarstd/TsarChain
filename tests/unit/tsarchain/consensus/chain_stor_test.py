@@ -602,6 +602,7 @@ def test_compute_state_snapshot(storage, monkeypatch):
         "payouts": {"art1": ["payout1"]}
     }
     utxo._graffiti_registry = registry
+    monkeypatch.setattr('tsarchain.consensus.chain_storage.GraffitiRegistry', Mock(return_value=registry))
 
     storage.ensure_utxodb = Mock(return_value=utxo)
 

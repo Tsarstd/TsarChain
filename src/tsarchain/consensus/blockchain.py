@@ -69,7 +69,7 @@ class Blockchain():
         self._snapshot_backup_active: bool = False
         self._state_snapshot_cache: dict | None = None
         self._last_block_validation_error: str | None = None
-        self._mempool: TxPool | None = None
+        self._mempool: TxPool = TxPool()
         self._mining_cooloff_until: float = 0.0
         
         self._persist_queue: queue.Queue[bool | None] | None = None
@@ -237,13 +237,11 @@ class Blockchain():
     def attach_mempool(self, pool: TxPool) -> None:
         self._mempool = pool
 
-    def get_mempool(self) -> TxPool | None:
+    def get_mempool(self) -> TxPool:
         return self._mempool
 
     def get_mempool_size(self) -> int:
-        if self._mempool is not None:
-            return len(self._mempool._pool)
-        return 0
+        return len(self._mempool._pool)
 
     @property
     def height(self) -> int:
@@ -314,7 +312,7 @@ class Blockchain():
             self._on_tip_changed_callbacks.append(cb)
 
     def notify_tip_changed(self, new_height: int, new_hash: str):
-        for cb in list(self._on_tip_changed_callbacks):
+        for cb in self._on_tip_changed_callbacks:
             try:
                 cb(new_height, new_hash)
             except Exception:

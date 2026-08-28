@@ -44,6 +44,14 @@ def _extract_script_bytes(script) -> bytes:
 
 
 class Tx:
+    version: int = 1
+    locktime: int = 0
+    txid: bytes | None = None
+    is_coinbase: bool = False
+    inputs: list = []
+    outputs: list = []
+    fee: int | None = None
+
     def __init__(self, version: int = 1, locktime: int = 0, txid: bytes | None = None, is_coinbase: bool = False, inputs=None, outputs=None, auto_compute_txid: bool = True, to_address: str | None = None, block_id: str | None = None, height: int | None = None, reward: int | None = None):
         self.version = int(version)
         self.inputs = list(inputs or [])
@@ -316,6 +324,13 @@ class Tx:
 
 
 class TxIn:
+    txid: bytes = b""
+    vout: int = 0
+    amount: int = 0
+    sequence: int = 0xFFFFFFFF
+    script_sig: Script | None = None
+    witness: list = []
+
     def __init__(self, txid: bytes, vout: int, amount: int = 0, script_sig: Script = None, witness: list = None, sequence: int = 0xFFFFFFFF):
         if type(txid) not in (bytes, bytearray) or len(txid) != 32:
             raise ValueError("txid must be 32-byte bytes")
@@ -380,6 +395,9 @@ class TxIn:
 
 
 class TxOut:
+    amount: int = 0
+    script_pubkey: Script | None = None
+
     def __init__(self, amount: int, script_pubkey: Script):
         if type(amount) is not int or amount < 0:
             raise ValueError("amount must be integer >= 0")

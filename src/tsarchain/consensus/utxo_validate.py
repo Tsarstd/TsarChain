@@ -9,7 +9,6 @@ from typing import Optional
 # ---------------- Local Project ----------------
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
-from .genesis import GENESIS_HASH
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger

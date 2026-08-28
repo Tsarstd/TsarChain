@@ -118,13 +118,10 @@ class MiningManager:
 
     def _fetch_sorted_mempool_txs(self, pool: TxPool) -> list:
         txs_raw = pool.get_all_txs()
-        
         graff_posts = [tx for tx in txs_raw if self._is_graffiti_post(tx)]
         other_txs = [tx for tx in txs_raw if not self._is_graffiti_post(tx)]
-
         graff_posts.sort(key=self._received_at)
         other_txs.sort(key=lambda t: (-self._fee(t), self._received_at(t)))
-
         return graff_posts + other_txs
 
 
@@ -195,7 +192,6 @@ class MiningManager:
         new_prev_hash = new_block.prev_block_hash
         new_height = int(new_block.height or 0)
         latest_height = int(latest.height if latest.height is not None else -1)
-
         is_stale = latest_hash != new_prev_hash or new_height != latest_height + 1
         
         if is_stale:
