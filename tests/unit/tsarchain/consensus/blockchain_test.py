@@ -224,7 +224,8 @@ def test_from_dict(mock_config, mock_block_module):
 
 def test_attach_mempool(mock_config):
     bc = Blockchain()
-    assert bc.get_mempool_size() == 0
+    assert bc.get_mempool_size() == 0          # default empty TxPool
+    assert bc.get_mempool() is not None        # always initialized, never None
     mock_pool = Mock()
     mock_pool._pool = {"tx1": "data", "tx2": "data"}
     bc.attach_mempool(mock_pool)

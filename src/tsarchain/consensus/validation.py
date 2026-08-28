@@ -42,7 +42,7 @@ class BlockValidator:
     # 1. VALIDATION PROCESSING
     # =============================================================================
 
-    @benchmark(label="validate_block", threshold_ms=200.0)
+    @benchmark(label="validate_block", threshold_ms=2000.0)
     def validate_block(self, block: Block) -> bool:
         try:
             # 1. Check Field Completeness
@@ -613,7 +613,7 @@ class BlockValidator:
             "amount": int(tx_out.amount or 0),
             "script_pubkey": script_bytes,
             "is_coinbase": bool(entry.get("is_coinbase", False)),
-            "block_height": int(entry.get("block_height", entry.get("height", 0)) or 0),
+            "block_height": int(entry.get("block_height", 0)),
         }
 
 

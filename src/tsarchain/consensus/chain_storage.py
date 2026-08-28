@@ -498,7 +498,7 @@ class ChainStorage:
         tx_stats = self._compute_transaction_and_miner_stats(chain)
         mempool_stats = self._compute_mempool_stats()
         supply_stats = self._compute_utxo_supply_stats(utxo, tip_height)
-        graffiti_stats = self._compute_graffiti_stats(utxo)
+        graffiti_stats = self._compute_graffiti_stats()
 
         emitted_subsidy = self.blockchain.calculate_total_supply()
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
@@ -674,61 +674,40 @@ class ChainStorage:
 
 
     def _compute_utxo_supply_stats(self, utxo, tip_height: int) -> dict:
-        utxo_set_size = 0
         circulating_estimate = 0
         immature_coinbase = 0
         utxo_total_value = 0
         maturity = int(CFG.COINBASE_MATURITY)
-        
+
         with utxo._lock:  # type: ignore[attr-defined]
             utxo_items = list(utxo.utxos.values())
-        utxo_set_size = len(utxo_items)
+
         for entry in utxo_items:
-            if type(entry) is dict:
-                tx_out = entry.get("tx_out") or entry
-                if type(tx_out) is dict:
-                    amt_val = tx_out.get("amount")
-                else:
-                    amt_val = tx_out.amount
-
-                if amt_val is None:
-                    amt_val = entry.get("amount", 0)
-                amount = int(amt_val or 0)
-                is_cb = bool(entry.get("is_coinbase", False))
-                born = int(entry.get("block_height", 0) or 0)
-            else:
-                tx_out = entry.tx_out or entry
-                amount = int(tx_out.amount or 0)
-                is_cb = bool(entry.is_coinbase)
-                born = int(entry.block_height or 0)
-
+            tx_out = entry["tx_out"]
+            amount = int(tx_out.amount or 0)
             if amount <= 0:
                 continue
+
             utxo_total_value += amount
-            if is_cb:
-                conf = max(0, (tip_height - born) + 1)
-                if conf >= maturity:
-                    circulating_estimate += amount
-                else:
-                    immature_coinbase += amount
+            if entry.get("is_coinbase", False) and (tip_height - int(entry.get("block_height", 0)) + 1) < maturity:
+                immature_coinbase += amount
             else:
                 circulating_estimate += amount
+
         return {
-            "utxo_set_size": utxo_set_size,
+            "utxo_set_size": len(utxo_items),
             "circulating_estimate": circulating_estimate,
             "immature_coinbase": immature_coinbase,
             "utxo_total_value": utxo_total_value,
         }
 
 
-    def _compute_graffiti_stats(self, utxo) -> dict:
+    def _compute_graffiti_stats(self) -> dict:
         graffiti_posts = 0
         total_comments = 0
         total_graffiti_storage = 0
         graffiti_on_mempool = 0
-        reg = utxo._graffiti_registry
-        if reg is None:
-            reg = GraffitiRegistry()
+        reg = GraffitiRegistry()
         data_g = reg.data or {}
         posts_data = data_g.get("posts") or {}
         graffiti_posts = len(posts_data)
@@ -742,20 +721,13 @@ class ChainStorage:
             total_pool_balances += int(stats.get("pool_balance", 0) or 0)
             
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
-        
         mem = self.blockchain.get_mempool()
-        if mem is None:
-            mem = self.blockchain._mempool
-
-        if mem is not None:
-            get_all_fn = mem.get_all_txs
-            if callable(get_all_fn):
-                for tx in get_all_fn():
-                    for tx_out in (tx.outputs or []):
-                        spk = tx_out.script_pubkey
-                        meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                        if meta and str(meta.get("event", "")).upper() == "POST":
-                            graffiti_on_mempool += 1
+        for tx in mem.get_all_txs():
+            for tx_out in (tx.outputs or []):
+                spk = tx_out.script_pubkey
+                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                if meta and str(meta.get("event", "")).upper() == "POST":
+                        graffiti_on_mempool += 1
                         
         total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
 
