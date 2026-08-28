@@ -187,9 +187,12 @@ class TestValidationMixin:
         mock_cfg.POW_ALGO = "randomx"
         mock_cfg.RANDOMX_KEY_EPOCH_BLOCKS = 100
         instance = self.create_instance()
-        instance._pow_warm_next_epoch = 2
-        instance._warm_pow_context(150)
-        mock_thread.assert_not_called()
+        BlockValidator._pow_warm_next_epoch = 2
+        try:
+            instance._warm_pow_context(150)
+            mock_thread.assert_not_called()
+        finally:
+            BlockValidator._pow_warm_next_epoch = None
 
     # -------------------------------------------------------------------
     # Tests for validate_block
@@ -920,8 +923,7 @@ class TestValidationMixin:
         tx.sigops_count = Mock(return_value=10)  # > 5
         block.transactions = [tx]
         store = Mock()
-        utxo_view = {}
-        result = instance._check_sigops_budget(block, store, utxo_view)
+        result = instance._check_sigops_budget(block, store)
         assert result is False
         assert instance._last_block_validation_error == "sigops_per_tx_exceeded"
 
@@ -944,8 +946,7 @@ class TestValidationMixin:
         tx2.sigops_count = Mock(return_value=3)
         block.transactions = [tx1, tx2]
         store = Mock()
-        utxo_view = {}
-        result = instance._check_sigops_budget(block, store, utxo_view)
+        result = instance._check_sigops_budget(block, store)
         assert result is False
         assert instance._last_block_validation_error == "sigops_per_block_exceeded"
 
@@ -968,8 +969,7 @@ class TestValidationMixin:
         tx2.sigops_count = Mock(return_value=3)
         block.transactions = [tx1, tx2]
         store = Mock()
-        utxo_view = {}
-        assert instance._check_sigops_budget(block, store, utxo_view) is True
+        assert instance._check_sigops_budget(block, store) is True
 
     def test_check_sigops_budget_uses_fallback_if_no_sigops_count(self):
         class Dummy(ValidationProxy):
@@ -981,14 +981,13 @@ class TestValidationMixin:
         block = Mock()
         tx = Mock(spec=["is_coinbase", "inputs", "sigops_count"])
         tx.is_coinbase = False
-        tx.sigops_count = None
-        tx.inputs = [1, 2, 3]  # length 3
+        tx.sigops_count = Mock(return_value=3)
+        tx.inputs = [1, 2, 3]
         
         block.transactions = [tx]
         store = Mock()
-        utxo_view = {}
         with patch("tsarchain.consensus.validation.CFG.MAX_SIGOPS_PER_TX", 10):
             with patch("tsarchain.consensus.validation.CFG.MAX_SIGOPS_PER_BLOCK", 100):
-                assert instance._check_sigops_budget(block, store, utxo_view) is True
+                assert instance._check_sigops_budget(block, store) is True
 
 

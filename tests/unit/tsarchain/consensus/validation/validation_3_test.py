@@ -440,7 +440,7 @@ class CovP3DummyTx:
         self.block_id = None
         self._cached_raw_tx_nowit = None
         self._cached_raw_tx_w = None
-        self.sigops_count = None
+        self.sigops_count = lambda _lookup_fn: len(self.inputs)
         self.raw = None
         self.size_bytes = None
         for k, v in kwargs.items():
@@ -487,18 +487,18 @@ def test_check_sigops_budget():
         cfg_mock.MAX_SIGOPS_PER_BLOCK = 20
         
         # total sigops = 3 + 5 = 8 <= 20. Pass.
-        assert c._check_sigops_budget(b, store, None) is True
+        assert c._check_sigops_budget(b, store) is True
         
         # Exceed per tx
         tx1.inputs = [1]*11 # 11 sigops
-        assert c._check_sigops_budget(b, store, None) is False
+        assert c._check_sigops_budget(b, store) is False
         assert c._last_block_validation_error == "sigops_per_tx_exceeded"
         
         # Exceed per block
         tx1.inputs = [1]*9 # 9 sigops
         cfg_mock.MAX_SIGOPS_PER_BLOCK = 12
         # total = 9 + 5 = 14 > 12
-        assert c._check_sigops_budget(b, store, None) is False
+        assert c._check_sigops_budget(b, store) is False
         assert c._last_block_validation_error == "sigops_per_block_exceeded"
 
 
@@ -725,9 +725,7 @@ def test_pow_ms_warning(mocker):
     
     store = Mock()
     c.ensure_utxodb = Mock(return_value=store)
-    store.lookup_entry = None
-    store.utxos = None
-    store.load_utxo_set = Mock(return_value={})
+    store.lookup_entry = Mock(return_value=None)
     
     b = CovP5DummyBlock()
     b._cached_hash = b"hash"
@@ -736,10 +734,10 @@ def test_pow_ms_warning(mocker):
     
     with patch("tsarchain.consensus.validation.CFG.DEBUG_BENCHMARKS", True):
         with patch("time.perf_counter", side_effect=[0, 0.2]):
-            c.validate_block(b)
+            result = c.validate_block(b)
     
-    # asserts that store.load_utxo_set was called (covers 130-132)
-    store.load_utxo_set.assert_called_once()
+    # validate_block completed through all mocked steps
+    assert result is True
 
 def test_native_validation_branches():
     c = CovP5DummyConsensus()
@@ -807,26 +805,18 @@ def test_check_sigops_budget_lookup():
     b = CovP5DummyBlock(transactions=[cb, tx1])
     
     store = Mock()
-    # explicitly remove lookup_entry
-    store.lookup_entry = None
+    store.lookup_entry = Mock(return_value={"script_pubkey": b"x"})
     
     with patch("tsarchain.consensus.validation.CFG") as cfg_mock:
         cfg_mock.MAX_SIGOPS_PER_TX = 10
         cfg_mock.MAX_SIGOPS_PER_BLOCK = 20
         
-        # Test utxo_view dict lookup
-        utxo_view = {"112233:0": {"script_pubkey": b"x"}}
-
-        def fake_sigops(lookup_fn):
-            res = lookup_fn(b"\x11\x22\x33", 0)
-            return 5 if res else 0
-        tx1.sigops_count = fake_sigops
-        
-        assert c._check_sigops_budget(b, store, utxo_view) is True
+        assert c._check_sigops_budget(b, store) is True
         
         # test entry is None
-        utxo_view_empty = {}
-        assert c._check_sigops_budget(b, store, utxo_view_empty) is True # fake_sigops returns 0
+        store.lookup_entry = Mock(return_value=None)
+        tx1.sigops_count = Mock(return_value=0)
+        assert c._check_sigops_budget(b, store) is True
 
 # --- Tests from validation_coverage_part6_test.py ---
 class CovP6DummyTx:
@@ -993,7 +983,7 @@ def test_check_sigops_budget_callable_lookup():
     with patch("tsarchain.consensus.validation.CFG") as cfg:
         cfg.MAX_SIGOPS_PER_TX = 10
         cfg.MAX_SIGOPS_PER_BLOCK = 20
-        c._check_sigops_budget(b, store, None)
+        c._check_sigops_budget(b, store)
         
         store.lookup_entry.assert_called_once_with("112233", 0)
 
