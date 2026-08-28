@@ -16,10 +16,6 @@ import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from bech32 import bech32_decode, bech32_encode, convertbits
-from typing import Tuple, Optional
-from ecdsa import VerifyingKey
-
-from ..storage import kv
 from ..utils import config as CFG
 
 try:
@@ -28,7 +24,6 @@ try:
         hash160 as _native_hash160,
         hash256 as _native_hash256,
         merkle_root as _native_merkle_root,
-        secp_verify_der_low_s as _native_verify_der_low_s,
         secp_verify_der_low_s_many as _native_verify_many,
         secp_sign_der_low_s as _native_sign_der_low_s,
         sighash_bip143 as _native_sighash_bip143,
@@ -39,7 +34,6 @@ try:
         serialize_tx_compact as _native_serialize_tx_compact,
         txid_from_compact as _native_txid_from_compact,
         wtxid_from_compact as _native_wtxid_from_compact,
-        sighash_bip143_compact as _native_sighash_bip143_compact,
         validate_tx_p2wpkh_compact as _native_validate_tx_p2wpkh_compact,
         randomx_mine as _native_randomx_mine,
 )
@@ -71,11 +65,6 @@ OP_EQUALVERIFY = 0x88
 OP_CHECKMULTISIG = 0xAE
 OP_CHECKSIGVERIFY = 0xAD
 OP_CHECKMULTISIGVERIFY = 0xAF
-
-# ======== SIGNATURE VERIFY HELPERS ========
-SECP256K1_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-HALF_N = SECP256K1_N // 2
 
 
 # -----------------------------
@@ -657,144 +646,9 @@ class Script:
         return Script([OP_0, prog])
 
 
-class DerSigError(ValueError):
-    pass
-
-
-def _int_from_bytes(b: bytes) -> int:
-    return int.from_bytes(b, "big", signed=False)
-
-
-def _int_to_bytes(i: int) -> bytes:
-    if i < 0:
-        raise ValueError("negative integer")
-    if i == 0:
-        return b"\x00"
-    length = (i.bit_length() + 7) // 8
-    return i.to_bytes(length, "big")
-
-
-def is_low_s(s: int) -> bool:
-    return 1 <= s <= HALF_N
-
-
-def der_encode_sig_strict(r: int, s: int) -> bytes:
-    def enc_int(x: int) -> bytes:
-        if x <= 0:
-            raise DerSigError("DER int must be positive")
-        xb = _int_to_bytes(x)
-        if xb[0] & 0x80:
-            xb = b"\x00" + xb
-        if len(xb) > 1 and xb[0] == 0x00 and not (xb[1] & 0x80):
-            raise DerSigError("non-minimal integer encoding")
-        return xb
-
-    r_b = enc_int(r)
-    s_b = enc_int(s)
-
-    seq = b"\x02" + bytes([len(r_b)]) + r_b + b"\x02" + bytes([len(s_b)]) + s_b
-    if len(seq) >= 0x80:
-        if len(seq) <= 0xFF:
-            len_bytes = b"\x81" + bytes([len(seq)])
-        else:
-            raise DerSigError("sequence too long")
-    else:
-        len_bytes = bytes([len(seq)])
-    return b"\x30" + len_bytes + seq
-
-
-def der_parse_sig_strict(sig: bytes) -> Tuple[int, int]:
-    try:
-        sig = bytes(sig)
-    except TypeError:
-        raise DerSigError("signature must be bytes")
-    if len(sig) < 8:  # minimal DER with tiny r,s
-        raise DerSigError("signature too short")
-
-    idx = 0
-    if sig[idx] != 0x30:
-        raise DerSigError("bad sequence tag")
-    idx += 1
-
-    def read_len(buf: bytes, i: int) -> Tuple[int, int]:
-        if i >= len(buf):
-            raise DerSigError("truncated length")
-        first = buf[i]
-        i += 1
-        if first < 0x80:
-            return first, i
-        n = first & 0x7F
-        if n == 0 or n > 2:
-            raise DerSigError("invalid length form")
-        if i + n > len(buf):
-            raise DerSigError("truncated long length")
-        length = 0
-        for j in range(n):
-            length = (length << 8) | buf[i + j]
-        i += n
-        if length < 0x80:
-            raise DerSigError("non-minimal length encoding")
-        return length, i
-
-    seq_len, idx = read_len(sig, idx)
-    if idx + seq_len != len(sig):
-        raise DerSigError("superfluous data after sequence")
-
-    if sig[idx] != 0x02:
-        raise DerSigError("missing r integer tag")
-    idx += 1
-    r_len, idx = read_len(sig, idx)
-    if r_len == 0 or idx + r_len > len(sig):
-        raise DerSigError("invalid r length")
-    r_bytes = sig[idx:idx + r_len]
-    idx += r_len
-
-    if r_bytes[0] & 0x80:
-        raise DerSigError("r negative")
-    if len(r_bytes) > 1 and r_bytes[0] == 0x00 and not (r_bytes[1] & 0x80):
-        raise DerSigError("r non-minimal")
-    r = _int_from_bytes(r_bytes)
-    if not (1 <= r < SECP256K1_N):
-        raise DerSigError("r out of range")
-
-    if sig[idx] != 0x02:
-        raise DerSigError("missing s integer tag")
-    idx += 1
-    s_len, idx = read_len(sig, idx)
-    if s_len == 0 or idx + s_len > len(sig):
-        raise DerSigError("invalid s length")
-    s_bytes = sig[idx:idx + s_len]
-    idx += s_len
-    if idx != len(sig):
-        raise DerSigError("trailing bytes in signature")
-
-    if s_bytes[0] & 0x80:
-        raise DerSigError("s negative")
-    if len(s_bytes) > 1 and s_bytes[0] == 0x00 and not (s_bytes[1] & 0x80):
-        raise DerSigError("s non-minimal")
-    s = _int_from_bytes(s_bytes)
-    if not (1 <= s < SECP256K1_N):
-        raise DerSigError("s out of range")
-
-    return r, s
-
-
-def is_signature_canonical_low_s(der_sig: bytes) -> bool:
-    try:
-        _, s = der_parse_sig_strict(der_sig)
-        return is_low_s(s)
-    except DerSigError:
-        return False
-
-
 # ===========================================================================
 # Native acceleration (Rust)
 # ===========================================================================
-
-
-def _vk_to_bytes(vk: "VerifyingKey") -> Optional[bytes]:
-    raw = vk.to_string()  # 64B (X||Y)
-    return b"\x04" + raw
 
 
 def count_sigops_in_script(script: bytes) -> int:
@@ -821,19 +675,6 @@ def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighas
     return bytes(digest32)
 
 
-def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes) -> bool:
-    try:
-        d_bytes = bytes(digest32)
-        if len(d_bytes) != 32:
-            raise ValueError("digest32 must be 32-byte")
-    except TypeError:
-        raise ValueError("digest32 must be 32-byte")
-    pub = _vk_to_bytes(vk)
-    if not pub:
-        raise ValueError("verifying key conversion failed")
-    return bool(_native_verify_der_low_s(pub, d_bytes, bytes(der_sig)))
-
-
 def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
     try:
         d_bytes = bytes(digest32)
@@ -844,43 +685,10 @@ def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
     return bytes(_native_sign_der_low_s(priv_hex, d_bytes))
 
 
-def merkle_root(transactions):
-    txids = []
-    for tx in transactions or []:
-        if type(tx) in (bytes, bytearray):
-            txid = bytes(tx)
-        elif type(tx) is str:
-            txid = bytes.fromhex(tx)
-        else:
-            try:
-                txid_val = tx.txid
-                if callable(txid_val):
-                    txid = txid_val()
-                elif txid_val is not None:
-                    txid = txid_val
-                else:
-                    txid = None
-            except AttributeError:
-                txid = None
-            if txid is None:
-                try:
-                    hash_val = tx.hash
-                    if callable(hash_val):
-                        txid = hash_val()
-                    else:
-                        raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-                except AttributeError:
-                    raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-
-            if type(txid) is str:
-                txid = bytes.fromhex(txid)
-            elif type(txid) in (bytes, bytearray):
-                txid = bytes(txid)
-        if len(txid) != 32:
-            raise ValueError(f"txid must be 32 bytes, got {len(txid)}")
-        txids.append(txid)
-    if not txids:
+def merkle_root(transactions) -> bytes:
+    if not transactions:
         return b"\x00" * 32
+    txids = [tx if type(tx) in (bytes, bytearray) else tx.txid for tx in transactions]
     return bytes(_native_merkle_root(txids))
 
 
@@ -915,10 +723,6 @@ def txid_from_compact(tx_tuple) -> bytes:
 
 def wtxid_from_compact(tx_tuple) -> bytes:
     return bytes(_native_wtxid_from_compact(tx_tuple))
-
-
-def sighash_bip143_compact(tx_tuple, input_index: int, script_code: bytes, value_sat: int, sighash_type: int = SIGHASH_ALL) -> bytes:
-    return bytes(_native_sighash_bip143_compact(tx_tuple, int(input_index), bytes(script_code), int(value_sat), int(sighash_type)))
 
 
 def parse_amount_sats(raw: str | int | float | Decimal, default: int = 0, *, min_sats: int = 0) -> int:
@@ -1038,4 +842,3 @@ def native_randomx_mine(
         progress_interval_ms if progress_interval_ms is None else int(progress_interval_ms),
         stop_event,
     )
-

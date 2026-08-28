@@ -5,8 +5,8 @@
 
 import time
 import struct
+import contextlib
 import multiprocessing as mp
-
 from typing import List, Optional
 from multiprocessing.synchronize import Event as MpEvent
 
@@ -15,7 +15,15 @@ from multiprocessing.synchronize import Event as MpEvent
 from ..core.tx import Tx
 from ..utils import config as CFG
 from ..core.coinbase import CoinbaseTx
-from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash_verify_light, bits_to_target, pow_key_for_height, native_randomx_mine
+from ..utils.helpers import (
+    bits_to_target,
+    int_to_little_endian,
+    merkle_root,
+    native_randomx_mine,
+    pow_hash_verify_light,
+    pow_key_for_height,
+    to_bytes,
+)
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -33,41 +41,46 @@ class BlockHeader:
     def serialize_block(self) -> bytes:
         return (
             int_to_little_endian(self.version, 4) +
-            (self.prev_block_hash if type(self.prev_block_hash) in (bytes, bytearray)
-             else bytes.fromhex(self.prev_block_hash)) +
-            (self.merkle_root if type(self.merkle_root) in (bytes, bytearray)
-             else bytes.fromhex(self.merkle_root)) +
+            to_bytes(self.prev_block_hash) +
+            to_bytes(self.merkle_root) +
             int_to_little_endian(self.timestamp, 4) +
             int_to_little_endian(self.bits, 4) +
-            int_to_little_endian(self.nonce, 4))
+            int_to_little_endian(self.nonce, 4)
+        )
 
 
 class Block:
-    def __init__(self, height: int, prev_block_hash: bytes, transactions: List[Tx], version: int = 1, bits: int = CFG.INITIAL_BITS, timestamp: Optional[int] = None, nonce: int = 0, merkle_root_precomputed: bytes | None = None, difficulty=None, chainwork=None):
+    def __init__(
+        self,
+        height: int,
+        prev_block_hash: bytes,
+        transactions: List[Tx],
+        version: int = 1,
+        bits: int = CFG.INITIAL_BITS,
+        timestamp: Optional[int] = None,
+        nonce: int = 0,
+        merkle_root_precomputed: bytes | None = None,
+        difficulty=None,
+        chainwork=None,
+    ):
         self.height = height
         self.version = version
-        self.prev_block_hash = prev_block_hash
+        self.prev_block_hash = to_bytes(prev_block_hash) if type(prev_block_hash) is str else prev_block_hash
         self.transactions = transactions
         self.difficulty = difficulty
         self.chainwork = chainwork
         self.size_bytes: Optional[int] = None
         self.vbytes: Optional[int] = None
         self.weight: Optional[int] = None
-        if merkle_root_precomputed is not None:
-            self.merkle_root = bytes(merkle_root_precomputed)
-        else:
-            self.merkle_root = merkle_root(transactions)
-        
+        self.merkle_root = bytes(merkle_root_precomputed) if merkle_root_precomputed is not None else merkle_root(transactions)
         self.timestamp = int(time.time()) if timestamp is None else timestamp
         self.bits = bits
         self.nonce = nonce
-        # Cache hash to avoid repeated RandomX verification during validation
         self._cached_hash = None
         self._cached_hash_nonce = None
         self._cached_hash_bits = None
         self._cached_hash_mr = None
         self._cached_hash_prev = None
-        
 
     def to_dict(self):
         return {
@@ -81,106 +94,70 @@ class Block:
             "bits": int(self.bits),
             "nonce": self.nonce,
             "hash": self.hash().hex(),
-            "transactions": [tx.to_dict() for tx in self.transactions],}
-        
+            "transactions": [tx.to_dict() for tx in self.transactions],
+        }
+
     @staticmethod
     def _parse_bits(v):
-        if v is None:
+        if v is None or type(v) is bool:
             return int(CFG.INITIAL_BITS) & 0xFFFFFFFF
-        if type(v) is bool:
-            return int(CFG.INITIAL_BITS) & 0xFFFFFFFF
-        if type(v) is int:
-            return v & 0xFFFFFFFF
-        if type(v) is float:
-            if v.is_integer():
-                return int(v) & 0xFFFFFFFF
-            raise TypeError(f"bits float non-integer: {v}")
+        if type(v) is int or (type(v) is float and v.is_integer()):
+            return int(v) & 0xFFFFFFFF
         if type(v) is str:
-            s = v.strip().lower()
-            val = int(s, 16) if s.startswith("0x") else int(s)
-            return val & 0xFFFFFFFF
+            return int(v, 0) & 0xFFFFFFFF
         raise TypeError(f"bits must be int/hexstr, got {type(v)}")
 
     @classmethod
     def from_dict(cls, data):
-        tx_list = []
-        for tx_data in data.get("transactions", []) or []:
-            tx_type = tx_data.get("type")
-            if tx_type == "Coinbase" or tx_data.get("is_coinbase"):
-                tx_obj = CoinbaseTx.from_dict(tx_data)
-            else:
-                tx_obj = Tx.from_dict(tx_data)
-            tx_list.append(tx_obj)
-        prev_hash = data.get("prev_block_hash", b"\x00" * 32)
-        if type(prev_hash) is str:
-            prev_hash_bytes = bytes.fromhex(prev_hash)
-        elif type(prev_hash) in (bytes, bytearray):
-            prev_hash_bytes = bytes(prev_hash)
-        else:
-            prev_hash_bytes = b"\x00" * 32
-        mr_bytes = data.get("merkle_root")
-        if type(mr_bytes) is str:
-            mr_bytes = bytes.fromhex(mr_bytes)
-        
+        tx_list = [
+            CoinbaseTx.from_dict(tx_data) if tx_data.get("type") == "Coinbase" or tx_data.get("is_coinbase") else Tx.from_dict(tx_data)
+            for tx_data in (data.get("transactions") or [])
+        ]
+        prev_hash = to_bytes(data.get("prev_block_hash")) or (b"\x00" * 32)
+        mr_bytes = to_bytes(data.get("merkle_root")) or None
+
         obj = cls(
             height=data.get("height", 0),
-            prev_block_hash=prev_hash_bytes,
+            prev_block_hash=prev_hash,
             transactions=tx_list,
             timestamp=data.get("timestamp"),
             nonce=data.get("nonce"),
             bits=cls._parse_bits(data.get("bits")),
             version=data.get("version", 1),
-            merkle_root_precomputed=mr_bytes,)
-        
+            merkle_root_precomputed=mr_bytes,
+        )
         obj.difficulty = data.get("difficulty")
         obj.chainwork = data.get("chainwork")
-        
-        # cache hash if provided to avoid double PoW verify; validation will still verify
-        try:
-            h_str = data.get("hash")
-            if type(h_str) is str and len(h_str) >= 64:
-                h_b = bytes.fromhex(h_str)
-                obj._cached_hash = h_b
+
+        h_str = data.get("hash")
+        if type(h_str) is str and len(h_str) >= 64:
+            with contextlib.suppress(ValueError, TypeError):
+                obj._cached_hash = bytes.fromhex(h_str)
                 obj._cached_hash_nonce = obj.nonce
                 obj._cached_hash_bits = obj.bits
                 obj._cached_hash_mr = obj.merkle_root
                 obj._cached_hash_prev = obj.prev_block_hash
-        except Exception:
-            log.exception("cache_hash_skiped")
 
         meta = data.get("_meta")
         if type(meta) is dict:
             obj._meta = dict(meta)
-            if obj.chainwork is None and "chainwork" in meta:
-                obj.chainwork = meta["chainwork"]
-            if obj.difficulty is None and "difficulty" in meta:
-                obj.difficulty = meta["difficulty"]
-            if obj.size_bytes is None and "size_bytes" in meta:
-                obj.size_bytes = meta["size_bytes"]
-            if obj.vbytes is None and "vbytes" in meta:
-                obj.vbytes = meta["vbytes"]
-            if obj.weight is None and "weight" in meta:
-                obj.weight = meta["weight"]
+            obj.chainwork = obj.chainwork if obj.chainwork is not None else meta.get("chainwork")
+            obj.difficulty = obj.difficulty if obj.difficulty is not None else meta.get("difficulty")
+            obj.size_bytes = obj.size_bytes if obj.size_bytes is not None else meta.get("size_bytes")
+            obj.vbytes = obj.vbytes if obj.vbytes is not None else meta.get("vbytes")
+            obj.weight = obj.weight if obj.weight is not None else meta.get("weight")
         return obj
 
     def header(self) -> bytes:
-        h = BlockHeader(self.version, self.prev_block_hash, self.merkle_root, self.timestamp, self.bits, self.nonce)
-        return h.serialize_block()
+        return BlockHeader(self.version, self.prev_block_hash, self.merkle_root, self.timestamp, self.bits, self.nonce).serialize_block()
 
     def to_storage_bytes(self) -> bytes:
         header_bytes = self.header()
-        if type(header_bytes) not in (bytes, bytearray):
-            header_bytes = b"\x00" * 80
-        h = int(self.height or 0)
-        diff = int(self.difficulty or 0)
-        cw = int(self.chainwork or 0)
-        tail = struct.pack("<QQQ", h, diff, cw)
+        tail = struct.pack("<QQQ", int(self.height or 0), int(self.difficulty or 0), int(self.chainwork or 0))
         txs = self.transactions or []
         tx_parts = [struct.pack("<I", len(txs))]
         for tx in txs:
             tx_raw = tx.to_storage_bytes()
-            if type(tx_raw) not in (bytes, bytearray):
-                tx_raw = b""
             tx_parts.append(struct.pack("<I", len(tx_raw)) + tx_raw)
         return header_bytes + tail + b"".join(tx_parts)
 
@@ -194,23 +171,22 @@ class Block:
         timestamp = int.from_bytes(raw[68:72], "little")
         bits = int.from_bytes(raw[72:76], "little")
         nonce = int.from_bytes(raw[76:80], "little")
-        
+
         h, diff, cw = struct.unpack_from("<QQQ", raw, 80)
         offset = 104
-        
+
         (tx_count,) = struct.unpack_from("<I", raw, offset)
         offset += 4
-        
+
         txs = []
         for _ in range(tx_count):
             (tx_len,) = struct.unpack_from("<I", raw, offset)
             offset += 4
             tx_raw = raw[offset:offset + tx_len]
             offset += tx_len
-            tx = Tx.from_storage_bytes(tx_raw)
-            txs.append(tx)
-            
-        block = cls(
+            txs.append(Tx.from_storage_bytes(tx_raw))
+
+        return cls(
             height=h,
             prev_block_hash=prev_hash,
             transactions=txs,
@@ -222,16 +198,14 @@ class Block:
             difficulty=diff,
             chainwork=cw,
         )
-        return block
 
     # -----------------------------
     # MINING
     # -----------------------------
 
     def hash(self) -> bytes:
-        # Recompute only if inputs changed (nonce/bits/merkle_root/prev_hash)
         if (
-            type(self._cached_hash) in (bytes, bytearray)
+            self._cached_hash is not None
             and self._cached_hash_nonce == self.nonce
             and self._cached_hash_bits == self.bits
             and self._cached_hash_mr == self.merkle_root
@@ -240,10 +214,8 @@ class Block:
             return self._cached_hash
 
         try:
-            key_hint = pow_key_for_height(self.height)
-            h = pow_hash_verify_light(self.header(), key_hint=key_hint)
+            h = pow_hash_verify_light(self.header(), key_hint=pow_key_for_height(self.height))
         except Exception:
-            log.exception("key_hint_err")
             h = pow_hash_verify_light(self.header(), height=self.height)
         self._cached_hash = h
         self._cached_hash_nonce = self.nonce
@@ -252,16 +224,13 @@ class Block:
         self._cached_hash_prev = self.prev_block_hash
         return h
 
-
     def mine(self, use_cores: int = None, stop_event: Optional[MpEvent] = None, pow_backend: str = "auto", progress_queue: Optional[mp.Queue] = None):
         self.nonce = 0
         if stop_event is not None and stop_event.is_set():
             return None
 
         total_cores = mp.cpu_count()
-        if type(use_cores) is not int or use_cores < 1:
-            use_cores = 1
-        num_cores = use_cores if use_cores <= total_cores else total_cores
+        num_cores = min(max(1, use_cores or 1), total_cores)
 
         target = bits_to_target(self.bits)
         if target <= 0:
@@ -281,13 +250,12 @@ class Block:
 
         header_prefix = self.header()[:-4]
         target_be = int(target).to_bytes(32, "big", signed=False)
-        threads = num_cores
 
         found = native_randomx_mine(
             header_prefix,
             target_be,
             pow_key,
-            threads=threads,
+            threads=num_cores,
             full_mem=bool(CFG.RANDOMX_FULL_MEM),
             large_pages=bool(CFG.RANDOMX_LARGE_PAGES),
             jit=bool(CFG.RANDOMX_JIT),
@@ -298,7 +266,7 @@ class Block:
             stop_event=stop_event,
         )
 
-        if type(found) is tuple and len(found) == 2:
+        if found:
             nonce, h = found
             self.nonce = int(nonce)
             if pow_hash_verify_light(self.header(), key_hint=pow_key) != h:
@@ -306,7 +274,6 @@ class Block:
                 return None
             return h
         return None
-
 
     def __repr__(self):
         return (

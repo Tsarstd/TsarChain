@@ -13,15 +13,12 @@ from tsarchain.utils.helpers import ( Script,
     target_to_difficulty, difficulty_to_target,
     block_id_generator,
     parse_ops, last_pushdata,
-    is_low_s,
-    der_encode_sig_strict, der_parse_sig_strict,
-    is_signature_canonical_low_s,
     pow_hash_miner, pow_hash_verify_light,
     randomx_key_for_height, pow_key_for_height,
     to_bytes, compute_tx_weight_vsize,
     tx_to_compact_tuple,
     count_sigops_in_script, batch_verify_der_low_s, bip143_sig_hash,
-    verify_der_strict_low_s, sign_digest_der_low_s_native, merkle_root,
+    sign_digest_der_low_s_native, merkle_root,
     native_validate_block_txs,
     native_randomx_mine
 )
@@ -118,12 +115,7 @@ def test_parse_ops():
     
     assert last_pushdata(script) == b"\x01\x02\x03\x04"
 
-def test_der_signatures():
-    r, s = 1, 1
-    sig = der_encode_sig_strict(r, s)
-    assert is_signature_canonical_low_s(sig)
-    r2, s2 = der_parse_sig_strict(sig)
-    assert r == r2 and s == s2
+
 
 def test_randomx_helpers():
     with patch("tsarchain.utils.helpers.CFG") as mock_cfg:
@@ -158,11 +150,7 @@ def test_bip143(m_s, m_b):
     tx = MagicMock()
     assert bip143_sig_hash(tx, 0, b"script", 100) == b"c"*32
 
-@patch("tsarchain.utils.helpers._native_verify_der_low_s", return_value=True)
-def test_verify_der_strict(m):
-    vk = MagicMock()
-    vk.to_string.return_value = b"x"*64
-    assert verify_der_strict_low_s(vk, b"y"*32, b"sig") is True
+
 
 @patch("tsarchain.utils.helpers._native_sign_der_low_s", return_value=b"sig")
 def test_sign_digest(m):
@@ -173,9 +161,9 @@ def test_merkle(m):
     assert merkle_root([b"x"*32]) == b"root"
     assert merkle_root([]) == b"\x00" * 32
     
-    # Objects with .txid() or .hash()
+    # Objects with .txid attribute (e.g. Tx, CoinbaseTx)
     t1 = MagicMock()
-    t1.txid.return_value = b"x"*32
+    t1.txid = b"x"*32
     assert merkle_root([t1]) == b"root"
 
 @patch("tsarchain.utils.helpers._native_validate_block_txs")
@@ -233,29 +221,7 @@ def test_pow_hashes(m_hash):
         assert pow_hash_miner(b"h") == b"hash"
         assert pow_hash_verify_light(b"h") == b"hash"
 
-def test_der_parse_edge_cases():
-    from tsarchain.utils.helpers import der_parse_sig_strict, DerSigError
-    
-    with pytest.raises(DerSigError):
-        der_parse_sig_strict(b"") # too short
-        
-    with pytest.raises(DerSigError):
-        der_parse_sig_strict(b"\x30") # too short
-        
-    with pytest.raises(DerSigError):
-        der_parse_sig_strict(b"\x31\x06\x02\x01\x01\x02\x01\x01") # bad tag
-        
-    with pytest.raises(DerSigError):
-        der_parse_sig_strict(b"\x30\x06\x03\x01\x01\x02\x01\x01") # missing r tag
-        
-    with pytest.raises(DerSigError):
-        der_parse_sig_strict(b"\x30\x81") # truncated length
-        
-    # Valid minimal sig
-    valid_sig = b"\x30\x06\x02\x01\x01\x02\x01\x01"
-    r, s = der_parse_sig_strict(valid_sig)
-    assert r == 1
-    assert s == 1
+
 
 def test_script_push_errors():
     from tsarchain.utils.helpers import Script

@@ -8,12 +8,14 @@ use secp256k1::{Secp256k1, Message, SecretKey};
 use ripemd::Ripemd160;
 use sha2::{Sha256, Digest};
 use std::sync::Once;
-use tsarcore_native::txcodec::{
-    txid_from_compact,
-    wtxid_from_compact, 
-    serialize_tx_compact,
-    sighash_bip143_compact,
-    validate_tx_p2wpkh_compact
+use tsarcore_native::{
+    sighash_bip143,
+    txcodec::{
+        txid_from_compact,
+        wtxid_from_compact, 
+        serialize_tx_compact,
+        validate_tx_p2wpkh_compact,
+    }
 };
 
 static INIT: Once = Once::new();
@@ -169,7 +171,8 @@ fn test_txcodec_validate_p2wpkh_success() {
         script_code.extend_from_slice(&pubkey_hash);
         script_code.extend_from_slice(&[0x88, 0xac]);
 
-        let sighash = sighash_bip143_compact(py, tx_empty.clone(), 0, &script_code, 100000, 1).unwrap();
+        let tx_raw = serialize_tx_compact(py, tx_empty.clone(), true).unwrap();
+        let sighash = sighash_bip143(py, tx_raw.as_bytes(), 0, &script_code, 100000, 1).unwrap();
         let mut digest_arr = [0u8; 32];
         digest_arr.copy_from_slice(sighash.as_bytes());
         let msg = Message::from_digest(digest_arr);
@@ -317,7 +320,8 @@ fn test_txcodec_validate_duplicate_prevout() {
         tx_empty_list.append(false).unwrap();
         let tx_empty = to_tuple(py, &tx_empty_list);
 
-        let sighash = sighash_bip143_compact(py, tx_empty.clone(), 0, &script_code, 100000, 1).unwrap();
+        let tx_raw = serialize_tx_compact(py, tx_empty.clone(), true).unwrap();
+        let sighash = sighash_bip143(py, tx_raw.as_bytes(), 0, &script_code, 100000, 1).unwrap();
         let mut digest_arr = [0u8; 32];
         digest_arr.copy_from_slice(sighash.as_bytes());
         let msg = Message::from_digest(digest_arr);

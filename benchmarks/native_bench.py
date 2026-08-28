@@ -71,25 +71,27 @@ def _make_low_s_der(sk: SigningKey, digest32: bytes) -> bytes:
     return ecdsa_util.sigencode_der(r, s, n)
 
 def _make_high_s_from_low_der(der_low: bytes) -> bytes:
-    r, s = H.der_parse_sig_strict(der_low)
+    r, s = ecdsa_util.sigdecode_der(der_low, SECP256k1.order)
     n = SECP256k1.order
     if s <= n // 2:
         s = n - s
+    return ecdsa_util.sigencode_der(r, s, n)
 
+def is_signature_canonical_low_s(der_sig: bytes) -> bool:
     try:
-        return H.der_encode_sig_strict(r, s)
-    except AttributeError:
-        def enc_int(x: int) -> bytes:
-            b = x.to_bytes((x.bit_length() + 7) // 8, 'big') or b'\x00'
-            if b[0] & 0x80:
-                b = b'\x00' + b
-            return b
-        rb, sb = enc_int(r), enc_int(s)
-        seq = b"\x02" + bytes([len(rb)]) + rb + b"\x02" + bytes([len(sb)]) + sb
-        return b"\x30" + bytes([len(seq)]) + seq
+        _, s = ecdsa_util.sigdecode_der(der_sig, SECP256k1.order)
+        return 1 <= s <= SECP256k1.order // 2
+    except Exception:
+        return False
+
+from tsarcore_native import secp_verify_der_low_s
 
 def _vk_bytes_uncompressed(vk: VerifyingKey) -> bytes:
     return b"\x04" + vk.to_string()
+
+def verify_der_strict_low_s(vk: VerifyingKey, digest32: bytes, der_sig: bytes) -> bool:
+    pub = _vk_bytes_uncompressed(vk)
+    return bool(secp_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
 
 HASH256_ABC = bytes.fromhex("4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358")
 HASH160_ABC = bytes.fromhex("bb1be98c142444d7a56aa3981c3942a978e4dc33")
@@ -295,21 +297,19 @@ def bench_verify_ecdsa(num_keys: int, iters: int) -> float:
         vk = sk.verifying_key
         d = secrets.token_bytes(32)
         der = _make_low_s_der(sk, d)
-        is_canon = getattr(H, "is_signature_canonical_low_s", None)
-        if callable(is_canon):
-            assert is_canon(der)
+        assert is_signature_canonical_low_s(der)
         vectors.append((vk, d, der))
 
     # sanity
     for (vk, d, der) in vectors[:min(5, len(vectors))]:
-        ok = H.verify_der_strict_low_s(vk, d, der)
+        ok = verify_der_strict_low_s(vk, d, der)
         assert ok
 
     t0 = time.perf_counter()
     ok_count = 0
     for i in range(iters):
         vk, d, der = vectors[i % num_keys]
-        if H.verify_der_strict_low_s(vk, d, der):
+        if verify_der_strict_low_s(vk, d, der):
             ok_count += 1
     dt = time.perf_counter() - t0
     assert ok_count >= 0
@@ -325,7 +325,7 @@ def bench_verify_batch(num_keys: int, iters: int) -> float:
         vecs.append((vk, d, der))
 
     items = [(_vk_bytes_uncompressed(vk), d, der) for (vk, d, der) in vecs]
-    singles = [H.verify_der_strict_low_s(vk, d, der) for (vk, d, der) in vecs]
+    singles = [verify_der_strict_low_s(vk, d, der) for (vk, d, der) in vecs]
     batch_once = H.batch_verify_der_low_s(items, enforce_low_s=True, parallel=True)
     assert list(map(bool, batch_once)) == list(map(bool, singles)), "batch != single result"
 
@@ -380,8 +380,8 @@ def check_verify_low_s():
     d = secrets.token_bytes(32)
     der_low = _make_low_s_der(sk, d)
     der_high = _make_high_s_from_low_der(der_low)
-    assert H.verify_der_strict_low_s(vk, d, der_low) is True
-    assert H.verify_der_strict_low_s(vk, d, der_high) is False
+    assert verify_der_strict_low_s(vk, d, der_low) is True
+    assert verify_der_strict_low_s(vk, d, der_high) is False
 
 def check_batch_matches_single(num: int = 64):
     vecs = []
@@ -392,7 +392,7 @@ def check_batch_matches_single(num: int = 64):
         der = _make_low_s_der(sk, d)
         vecs.append((vk, d, der))
 
-    singles = [H.verify_der_strict_low_s(vk, d, der) for (vk, d, der) in vecs]
+    singles = [verify_der_strict_low_s(vk, d, der) for (vk, d, der) in vecs]
 
     items = [(_vk_bytes_uncompressed(vk), d, der) for (vk, d, der) in vecs]
     batch = H.batch_verify_der_low_s(items, enforce_low_s=True, parallel=True)
@@ -418,11 +418,12 @@ class _TxOut:
         self.script_pubkey = script_pubkey
 
 class _Tx:
-    def __init__(self, version: int, inputs: List[_TxIn], outputs: List[_TxOut], locktime: int = 0):
+    def __init__(self, version: int, inputs: List[_TxIn], outputs: List[_TxOut], locktime: int = 0, is_coinbase: bool = False):
         self.version = int(version)
         self.inputs = inputs
         self.outputs = outputs
         self.locktime = int(locktime)
+        self.is_coinbase = bool(is_coinbase)
 
 def check_bip143_vector():
     inp = _TxIn(txid=BIP143_PREV_TXID, vout=1, script_sig=_RawScript(b""))
@@ -465,8 +466,7 @@ def main():
     print("Native backend is mandatory; helpers module imported tsarcore_native successfully.")
     print("Functions available:", [x for x in (
         "count_sigops_in_script", "bip143_sig_hash",
-        "verify_der_strict_low_s", "merkle_root",
-        "hash256", "hash160", "batch_verify_der_low_s"
+        "merkle_root", "hash256", "hash160", "batch_verify_der_low_s"
     ) if getattr(H, x, None) is not None])
 
     # -------- correctness --------
