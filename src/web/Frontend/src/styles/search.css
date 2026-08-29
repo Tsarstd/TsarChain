@@ -1041,6 +1041,7 @@
 .metric-icon-wrap.nonce { background: var(--bg-tint-success); color: var(--color-warning-light); }
 .metric-icon-wrap.version { background: var(--bg-tint-success); color: var(--color-warning-light); }
 .metric-icon-wrap.chainwork { background: var(--bg-tint-success); color: var(--color-warning-light); }
+.metric-icon-wrap.fee { background: var(--bg-tint-success); color: var(--color-warning-light); }
 
 .metric-info {
   display: flex;

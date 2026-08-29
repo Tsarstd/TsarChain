@@ -332,6 +332,8 @@ def test_tx_storage_bytes():
     assert restored.version == tx.version
     assert restored.locktime == tx.locktime
     assert restored.is_coinbase is False
+    assert restored.fee == 50
+    assert restored.to_dict()["fee"] == 50
     assert len(restored.inputs) == 1
     assert restored.inputs[0].txid == b"\x01"*32
     assert restored.inputs[0].amount == 500
@@ -350,4 +352,6 @@ def test_tx_storage_bytes():
     assert restored_cb.block_id == "blk_10"
     assert restored_cb.height == 10
     assert restored_cb.reward == 5000000000
+    assert "fee" not in restored_cb.to_dict()
+    assert restored_cb.to_dict()["reward"] == 5000000000
 

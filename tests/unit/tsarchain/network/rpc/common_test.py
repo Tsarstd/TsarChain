@@ -90,6 +90,7 @@ def test_summarize_block():
     mock_block = Mock()
     mock_block.height = 100
     mock_block.timestamp = 1234567890
+    mock_block.total_fee = 2500
     
     mock_tx = Mock()
     mock_tx.block_id = 999
@@ -130,6 +131,7 @@ def test_summarize_block():
         assert res["hash"] == "block_hash_123"
         assert res["block_id"] == 999
         assert res["timestamp"] == 1234567890
+        assert res["total_fee"] == 2500
         assert res["tx_count"] == 2
         assert res["graffiti_posts"] == 1
         assert res["graffiti_comments"] == 1

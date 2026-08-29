@@ -118,14 +118,10 @@ def test_extract_block_id_from_block_no_txs(mixin):
 def test_extract_block_id_from_block_coinbase_first(mixin):
     cb = Mock()
     cb.is_coinbase = True
-    cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = Mock()
-    cb.inputs[0].script_sig.serialize = Mock(return_value=b'\x04\x01\x02\x03')
-    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
-        mock_last_pushdata.return_value = b'block_id_123'
-        block = Mock()
-        block.transactions = [cb]
-        assert mixin._extract_block_id_from_block(block) == 'block_id_123'
+    cb.block_id = 'block_id_123'
+    block = Mock()
+    block.transactions = [cb]
+    assert mixin._extract_block_id_from_block(block) == 'block_id_123'
 
 
 def test_extract_block_id_from_block_coinbase_not_first(mixin):
@@ -133,14 +129,10 @@ def test_extract_block_id_from_block_coinbase_not_first(mixin):
     tx1.is_coinbase = False
     cb = Mock()
     cb.is_coinbase = True
-    cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = Mock()
-    cb.inputs[0].script_sig.serialize = Mock(return_value=b'\x04\x01\x02\x03')
+    cb.block_id = 'block_id_456'
     block = Mock()
     block.transactions = [tx1, cb]
-    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
-        mock_last_pushdata.return_value = b'block_id_456'
-        assert mixin._extract_block_id_from_block(block) == 'block_id_456'
+    assert mixin._extract_block_id_from_block(block) == 'block_id_456'
 
 
 def test_extract_block_id_from_block_no_coinbase(mixin):
@@ -153,51 +145,22 @@ def test_extract_block_id_from_block_no_coinbase(mixin):
     assert mixin._extract_block_id_from_block(block) is None
 
 
-def test_extract_block_id_from_block_coinbase_no_inputs(mixin):
+def test_extract_block_id_from_block_coinbase_no_block_id(mixin):
     cb = Mock()
     cb.is_coinbase = True
-    cb.inputs = []
+    cb.block_id = None
     block = Mock()
     block.transactions = [cb]
     assert mixin._extract_block_id_from_block(block) is None
 
 
-
-def test_extract_block_id_from_block_script_sig_as_bytes(mixin):
-    cb = Mock(spec=["is_coinbase", "inputs"])
-    cb.is_coinbase = True
-    cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = b'\x04\x01\x02\x03'
+def test_calculate_block_bonus(mixin):
     block = Mock()
-    block.transactions = [cb]
-    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
-        mock_last_pushdata.return_value = b'block_id_789'
-        assert mixin._extract_block_id_from_block(block) == 'block_id_789'
-
-
-def test_extract_block_id_from_block_script_sig_as_hex_str(mixin):
-    cb = Mock(spec=["is_coinbase", "inputs"])
-    cb.is_coinbase = True
-    cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = '04010203'
-    block = Mock()
-    block.transactions = [cb]
-    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
-        mock_last_pushdata.return_value = b'block_id_hex'
-        assert mixin._extract_block_id_from_block(block) == 'block_id_hex'
-
-
-def test_extract_block_id_from_block_last_pushdata_fail(mixin):
-    cb = Mock(spec=["is_coinbase", "inputs"])
-    cb.is_coinbase = True
-    cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = Mock()
-    cb.inputs[0].script_sig.serialize = Mock(return_value=b'\x04\x01\x02\x03')
-    block = Mock()
-    block.transactions = [cb]
-    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
-        mock_last_pushdata.return_value = None
-        assert mixin._extract_block_id_from_block(block) is None
+    block.height = 5
+    block.total_fee = 1500
+    chain = [block]
+    assert mixin._calculate_block_bonus(5, chain, {}) == 1500
+    assert mixin._calculate_block_bonus(99, chain, {}) is None
 
 
 # ----------------------------------------------------------------------
@@ -283,6 +246,8 @@ def test_handle_get_block_hash_benchmark(mixin):
 def test_serialize_tx_basic(mixin):
     tx = Mock()
     tx.txid = b'abcdef'
+    tx.is_coinbase = False
+    tx.fee = 500
     tx.inputs = [Mock(), Mock()]
     tx.outputs = [
         Mock(amount=100, script_pubkey=b'abc'),
@@ -291,6 +256,8 @@ def test_serialize_tx_basic(mixin):
     mixin.txout_to_address.side_effect = ['addr1', 'addr2']
     result = mixin._serialize_tx_basic(tx)
     assert result["txid"] == b'abcdef'.hex()
+    assert result["is_coinbase"] is False
+    assert result["fee"] == 500
     assert len(result["vin"]) == 2
     assert len(result["vout"]) == 2
     assert result["vout"][0]["index"] == 0
@@ -302,26 +269,33 @@ def test_serialize_tx_basic(mixin):
 def test_serialize_tx_basic_txid_str(mixin):
     tx = Mock()
     tx.txid = 'abcdef'
+    tx.is_coinbase = True
+    tx.reward = 25000000000
     tx.inputs = []
     tx.outputs = []
     result = mixin._serialize_tx_basic(tx)
     assert result["txid"] == 'abcdef'
+    assert result["is_coinbase"] is True
+    assert result["reward"] == 25000000000
 
 
 def test_serialize_tx_basic_txid_none(mixin):
     tx = Mock()
     tx.txid = None
+    tx.is_coinbase = False
+    tx.fee = None
     tx.inputs = []
     tx.outputs = []
     result = mixin._serialize_tx_basic(tx)
     assert result["txid"] == ''
+    assert result["is_coinbase"] is False
 
 
 # ----------------------------------------------------------------------
 # Tests for serialize_block
 # ----------------------------------------------------------------------
 
-def test_serialize_block_basic(mixin):
+def test_serialize_block_success(mixin):
     block = Mock()
     block.height = 100
     block.timestamp = 123456
@@ -331,6 +305,7 @@ def test_serialize_block_basic(mixin):
     block.bits = 0x1d00ffff
     block.chainwork = b'chainwork'
     block.difficulty = 123.45
+    block.total_fee = 5000
 
     tx1 = Mock()
     tx1.txid = b'txid1'
@@ -385,6 +360,7 @@ def test_serialize_block_basic(mixin):
         assert result["chainwork"] == b'chainwork'
         assert result["size_bytes"] == 1024
         assert result["merkle_root"] == b'merkle'.hex()
+        assert result["total_fee"] == 5000
         assert result["tx_count"] == 2
         assert len(result["tx"]) == 2
         assert len(result["graffiti"]) == 1
@@ -406,6 +382,7 @@ def test_serialize_block_with_comments_and_payouts(mixin):
     block.bits = 0x1d00ffff
     block.chainwork = b'cw'
     block.difficulty = 456.78
+    block.total_fee = 0
     block.transactions = []
 
     tx1 = Mock()
@@ -455,6 +432,7 @@ def test_serialize_block_no_graffiti(mixin):
     block.bits = 0
     block.chainwork = b''
     block.difficulty = 0
+    block.total_fee = 0
     block.transactions = [Mock(txid=b'tx', inputs=[], outputs=[Mock(script_pubkey=b'plain')])]
     mixin.mempool.get_all_txs.return_value = []
 
@@ -529,6 +507,7 @@ def test_get_tx_detail_non_coinbase_confirmed_with_bonus(mixin):
 
     block = Mock()
     block.height = height
+    block.total_fee = 95
     other_tx = Mock()
     other_tx.inputs = [Mock()]
     other_tx.outputs = [Mock(amount=5)]

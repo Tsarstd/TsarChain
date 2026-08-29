@@ -82,6 +82,10 @@ class Block:
         self._cached_hash_mr = None
         self._cached_hash_prev = None
 
+    @property
+    def total_fee(self) -> int:
+        return sum(int(tx.fee or 0) for tx in (self.transactions or []) if not tx.is_coinbase)
+
     def to_dict(self):
         return {
             "height": self.height,
@@ -94,6 +98,7 @@ class Block:
             "bits": int(self.bits),
             "nonce": self.nonce,
             "hash": self.hash().hex(),
+            "total_fee": self.total_fee,
             "transactions": [tx.to_dict() for tx in self.transactions],
         }
 

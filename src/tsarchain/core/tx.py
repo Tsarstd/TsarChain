@@ -64,6 +64,20 @@ class Tx:
 
     # -------- Fee helpers ----------
 
+    def calculate_fee(self) -> int:
+        if self.is_coinbase:
+            self.fee = 0
+            return 0
+        if self.fee is not None:
+            return self.fee
+        if self.inputs and self.outputs:
+            total_in = sum(int(vin.amount or 0) for vin in self.inputs)
+            total_out = sum(int(vout.amount or 0) for vout in self.outputs)
+            if total_in >= total_out and total_in > 0:
+                self.fee = total_in - total_out
+                return self.fee
+        return 0
+
     def set_fee_from_input_amounts(self, input_amounts: list[int]) -> int:
         if self.is_coinbase:
             self.fee = 0
@@ -144,15 +158,17 @@ class Tx:
         return serialize_tx(self, include_witness=include_witness)
 
     def to_dict(self, include_txid: bool = True) -> dict:
-        return {
+        d = {
             "version": self.version,
             "inputs": [txin.to_dict() for txin in self.inputs],
             "outputs": [txout.to_dict() for txout in self.outputs],
             "locktime": self.locktime,
             "txid": self.txid.hex() if (include_txid and self.txid) else None,
-            "fee": self.fee,
-            "is_coinbase": self.is_coinbase,
         }
+        if not self.is_coinbase:
+            d["fee"] = self.fee if self.fee is not None else self.calculate_fee()
+        d["is_coinbase"] = self.is_coinbase
+        return d
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -174,6 +190,8 @@ class Tx:
             auto_compute_txid=False,
         )
         obj.fee = data.get("fee", 0 if obj.is_coinbase else None)
+        if obj.fee is None and not obj.is_coinbase:
+            obj.calculate_fee()
         if obj.txid is None:
             obj.compute_txid()
         return obj
@@ -263,7 +281,11 @@ class Tx:
             obj.compute_txid()
             return obj
             
-        return cls(version=version, locktime=locktime, is_coinbase=False, inputs=inputs, outputs=outputs)
+        obj = cls(version=version, locktime=locktime, is_coinbase=False, inputs=inputs, outputs=outputs)
+        total_in = sum(int(i.amount or 0) for i in inputs)
+        total_out = sum(int(o.amount or 0) for o in outputs)
+        obj.fee = max(0, total_in - total_out) if total_in >= total_out else 0
+        return obj
 
     # -------- Convenience props ----------
     

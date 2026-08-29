@@ -77,6 +77,8 @@ def test_block_to_dict(mock_mr, mock_hash):
     mock_hash.return_value = b"blockhash"
     
     tx = MagicMock()
+    tx.is_coinbase = False
+    tx.fee = 250
     tx.to_dict.return_value = {"tx": 1}
     
     b = Block(height=1, prev_block_hash=b"prev", transactions=[tx], timestamp=1000, bits=456, nonce=789)
@@ -94,6 +96,7 @@ def test_block_to_dict(mock_mr, mock_hash):
     assert d["bits"] == 456
     assert d["nonce"] == 789
     assert d["hash"] == b"blockhash".hex()
+    assert d["total_fee"] == 250
     assert d["transactions"] == [{"tx": 1}]
 
 def test_block_from_dict():

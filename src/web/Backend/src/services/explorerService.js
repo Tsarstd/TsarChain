@@ -42,6 +42,7 @@ const normalizeBlock = (blk) => {
   const version = pick(obj, "version");
   const merkleRoot = pick(obj, "merkle_root", "merkleroot");
   const nonce = pick(obj, "nonce");
+  const totalFee = pick(obj, "total_fee", "total_fees", "fee", "fees");
   const txsRaw = obj.transactions || obj.tx || [];
   if (!blockId && Array.isArray(txsRaw) && txsRaw.length > 0) {
     const first = txsRaw[0];
@@ -83,6 +84,7 @@ const normalizeBlock = (blk) => {
     version,
     merkle_root: merkleRoot,
     nonce,
+    total_fee: Number(totalFee ?? 0),
     transactions: txs,
     graffiti,
     comments,
@@ -95,6 +97,7 @@ const normalizeBlockSummary = (blk) => {
   const hash = pick(blk, "hash");
   const timestamp = pick(blk, "timestamp", "time");
   const sizeBytes = pick(blk, "size_bytes", "size");
+  const totalFee = pick(blk, "total_fee", "total_fees", "fee", "fees");
   let txCountFallback = 0;
   if (Array.isArray(blk.transactions)) {
     txCountFallback = blk.transactions.length;
@@ -113,6 +116,7 @@ const normalizeBlockSummary = (blk) => {
     hash,
     timestamp,
     size_bytes: sizeBytes,
+    total_fee: Number(totalFee ?? 0),
     tx_count: Number(txCountRaw || 0),
     graffiti_posts: graffitiPosts,
     graffiti_comments: graffitiComments,

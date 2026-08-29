@@ -11,7 +11,7 @@ from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ...contracts import graffiti as GRAFF
 from ...utils.benchmarks import benchmark
-from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address, extract_script_bytes
+from ...utils.helpers import estimate_block_size_bytes, spkhex_to_address
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -121,6 +121,7 @@ class ExplorerHandler(NetworkHandlerProxy):
             "chainwork": b.chainwork,
             "size_bytes": estimate_block_size_bytes(b),
             "merkle_root": self._to_hex_helper(b.merkle_root),
+            "total_fee": int(b.total_fee or 0),
             "tx": txs,
             "tx_count": len(txs),
             "graffiti": graffiti_posts,
@@ -197,49 +198,20 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _calculate_block_bonus(self, height: int, chain: list, opmap: dict) -> int | None:
-        def _get_h(b):
-            return int(b.height or 0)
-        block = next((b for b in chain if _get_h(b) == height), None)
+        block = next((b for b in chain if int(b.height or 0) == height), None)
         if not block:
             return None
-            
-        total_block_fee = 0
-        txs = block.transactions or []
-        for tx_in_block in txs:
-            if self.is_coinbase_tx(tx_in_block):
-                continue
-
-            inputs = tx_in_block.inputs or []
-            outputs = tx_in_block.outputs or []
-                
-            tx_total_in = sum(int(opmap.get(self.txin_prevkey(tin), (0, None))[0] or 0)
-                              for tin in inputs)
-            def _get_amt(o):
-                return int(o.amount or 0)
-            tx_total_out = sum(_get_amt(o) for o in outputs)
-            
-            tx_fee = tx_total_in - tx_total_out
-            if tx_fee > 0:
-                total_block_fee += tx_fee
-                
-        return total_block_fee
+        return int(block.total_fee or 0)
 
 
     def _extract_block_id_from_block(self, b) -> str | None:
         txs = b.transactions or []
         if not txs:
             return None
-
         cb = txs[0] if txs[0].is_coinbase else next((t for t in txs if t.is_coinbase), None)
-        if not cb or not cb.inputs or cb.inputs[0].script_sig is None:
-            return None
-
-        raw = extract_script_bytes(cb.inputs[0].script_sig)
-        if not raw:
-            return None
-
-        data = last_pushdata(raw)
-        return (data.decode("utf-8", errors="ignore") or data.hex()) if data else None
+        if cb and cb.block_id:
+            return str(cb.block_id)
+        return None
 
 
     def _prevhash_hex(self, b) -> str:
@@ -264,8 +236,17 @@ class ExplorerHandler(NetworkHandlerProxy):
             amt = int(o.amount or 0)
             addr = self.txout_to_address(o) or ""
             vout_list.append({"index": idx, "amount": amt, "address": addr})
-        
-        return {"txid": txid, "vin": [{} for _ in range(n_in)], "vout": vout_list}
+        d = {
+            "txid": txid,
+            "vin": [{} for _ in range(n_in)],
+            "vout": vout_list,
+            "is_coinbase": bool(tx.is_coinbase),
+        }
+        if not tx.is_coinbase:
+            d["fee"] = tx.fee
+        else:
+            d["reward"] = tx.reward
+        return d
 
 
     def _to_hex_helper(self, x):

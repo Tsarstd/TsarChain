@@ -448,7 +448,7 @@
   display: flex;
   align-items: center;
   padding-bottom: 0.6rem;
-  border-bottom: 1px solid var(--bg-glass-pill);
+  border-bottom: 1px solid var(--border-glass);
 }
 
 .doc-section-title-link {
@@ -462,19 +462,21 @@
 }
 
 .doc-subheading-h3 {
-  font-size: 1.2rem;
+  font-size: 1.22rem;
   font-weight: 600;
   color: var(--text-heading);
-  margin-top: 1rem;
-  margin-bottom: 0.35rem;
+  margin-top: 1.4rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: -0.01em;
 }
 
 .doc-subheading-h4 {
-  font-size: 1.05rem;
+  font-family: var(--font-montserrat);
+  font-size: 1.02rem;
   font-weight: 600;
-  color: var(--accent-peach);
-  margin-top: 0.75rem;
-  margin-bottom: 0.25rem;
+  color: var(--text-heading);
+  margin-top: 1.1rem;
+  margin-bottom: 0.3rem;
 }
 
 .doc-markdown-blocks {
@@ -490,23 +492,25 @@
 }
 
 .doc-paragraph {
-  font-size: 0.98rem;
-  color: var(--text-muted);
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
 }
 
 .doc-inline-code {
-  background: var(--accent-subtle);
-  border: 1px solid var(--accent-subtle-border);
-  color: var(--accent-peach);
-  padding: 0.15rem 0.45rem;
-  border-radius: 5px;
+  background: var(--bg-glass-active);
+  border: 1px solid var(--border-glass);
+  color: var(--color-tsar-cream);
+  padding: 0.15rem 0.42rem;
+  border-radius: 4px;
   font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
-  font-size: 0.88em;
+  font-size: 0.86em;
+  font-weight: 500;
   word-break: break-word;
 }
 
 .doc-inline-link {
-  color: var(--accent);
+  color: var(--link-color);
   text-decoration: underline;
   text-underline-offset: 3px;
   font-weight: 500;
@@ -515,8 +519,8 @@
 }
 
 .doc-inline-link:hover {
-  color: var(--accent-peach);
-  opacity: 0.85;
+  color: var(--link-hover);
+  opacity: 0.9;
 }
 
 .doc-bullet-list {
@@ -525,8 +529,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  color: var(--text-muted);
-  font-size: 0.98rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.65;
 }
 
 .doc-ordered-list {
@@ -535,19 +540,81 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  color: var(--text-muted);
-  font-size: 0.98rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.65;
 }
 
 .doc-section-quote,
 .doc-quote {
-  border-left: 3px solid var(--accent);
-  background: var(--accent-subtle);
-  padding: 0.85rem 1.25rem;
-  border-radius: 0 8px 8px 0;
-  font-style: italic;
-  color: var(--text-primary);
-  font-size: 1rem;
+  border-left: 3px solid var(--color-tsar-orange);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-glass);
+  border-left: 3px solid var(--color-tsar-orange);
+  padding: 1.1rem 1.3rem;
+  border-radius: 8px;
+  font-style: normal;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+/* Callout & Storyline Card */
+.doc-quote-card {
+  border-radius: 12px;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-glass);
+  border-left: 3px solid var(--color-tsar-orange);
+  padding: 1.25rem 1.4rem;
+  margin: 0.25rem 0 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.doc-quote-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-heading);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.doc-quote-card-title {
+  color: var(--text-heading);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.doc-quote-bullet-list {
+  list-style: none;
+  padding-left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.doc-quote-bullet-list li {
+  position: relative;
+  padding-left: 1.2rem;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.doc-quote-bullet-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0.2rem;
+  color: var(--color-tsar-orange);
+  font-size: 1.1rem;
+  line-height: 1.3;
 }
 
 /* Callout Alerts */

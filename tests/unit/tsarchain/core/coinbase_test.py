@@ -69,7 +69,7 @@ def test_coinbase_to_dict(mock_script, mock_txin, mock_txout):
         cb.txid = b"cb_txid"
         
         # mock super().to_dict
-        with patch("tsarchain.core.tx.Tx.to_dict", return_value={"txid": "cb_txid"}):
+        with patch("tsarchain.core.tx.Tx.to_dict", return_value={"txid": "cb_txid", "is_coinbase": True}):
             d = cb.to_dict()
             assert d["type"] == "Coinbase"
             assert d["to_address"] == "addr"
@@ -77,6 +77,13 @@ def test_coinbase_to_dict(mock_script, mock_txin, mock_txout):
             assert d["block_id"] == "b1"
             assert d["height"] == 1
             assert d["txid"] == "cb_txid"
+            assert "fee" not in d
+
+        # real to_dict call
+        real_d = cb.to_dict()
+        assert "fee" not in real_d
+        assert real_d["reward"] == 50
+        assert real_d["is_coinbase"] is True
 
 @patch("tsarchain.core.coinbase.Script.p2wpkh_script")
 def test_coinbase_from_dict(mock_p2wpkh):
