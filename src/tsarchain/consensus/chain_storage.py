@@ -213,7 +213,6 @@ class ChainStorage:
             self.blockchain._persisted_height = tip_height
 
 
-
     def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
         if tip_height < 0:
             return

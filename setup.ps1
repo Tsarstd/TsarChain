@@ -43,8 +43,8 @@ if (!(Get-Command "python" -ErrorAction SilentlyContinue)) {
     Write-Host "Python is already installed."
 }
 
-# 4. INSTALL WEBSITE REQUIREMENTS ( Frontend & Backend )
-Print-Step "4/8: Checking/Installing Node.js & Website Dependencies..."
+# 4. INSTALL WEBSITE REQUIREMENTS ( Frontend Explorer )
+Print-Step "4/8: Checking/Installing Node.js & Frontend Explorer Dependencies..."
 if (!(Get-Command "npm" -ErrorAction SilentlyContinue)) {
     Write-Host "npm not found. Installing Node.js via winget..."
     winget install -e --id OpenJS.NodeJS --accept-source-agreements --accept-package-agreements
@@ -52,17 +52,12 @@ if (!(Get-Command "npm" -ErrorAction SilentlyContinue)) {
 }
 
 if (Get-Command "npm" -ErrorAction SilentlyContinue) {
-    Write-Host "Installing Backend dependencies..."
-    Push-Location "src\web\Backend"
-    npm install
-    Pop-Location
-
-    Write-Host "Installing Frontend dependencies..."
+    Write-Host "Installing Frontend Explorer dependencies..."
     Push-Location "src\web\Frontend"
     npm install
     Pop-Location
 } else {
-    Print-Warn "npm is still not available. Please install Node.js manually. Skipping website dependencies."
+    Print-Warn "npm is still not available. Please install Node.js manually. Skipping frontend dependencies."
 }
 
 # 5. SETUP VIRTUAL ENVIRONMENT
