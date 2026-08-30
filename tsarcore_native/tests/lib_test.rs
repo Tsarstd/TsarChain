@@ -7,7 +7,7 @@ use tsarcore_native::{
     count_sigops, hash160, hash256, merkle_root, randomx_pow_hash, secp_sign_der_low_s,
     secp_verify_der_low_s, secp_verify_der_low_s_many, sighash_bip143,
 };
-use secp256k1::{Secp256k1, SecretKey};
+use secp256k1::SecretKey;
 
 static INIT: Once = Once::new();
 
@@ -123,13 +123,12 @@ fn test_lib_ecdsa() {
     init_python();
     Python::attach(|py| {
         // Generate key pair
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_byte_array([0xcd; 32]).expect("32 bytes, within curve order");
-        let pk = sk.public_key(&secp);
+        let sk = SecretKey::from_secret_bytes([0xcd; 32]).expect("32 bytes, within curve order");
+        let pk = sk.public_key();
         
         // Digest
         let digest32 = [0xaa; 32];
-        let sk_hex = hex::encode(sk.secret_bytes());
+        let sk_hex = hex::encode(sk.to_secret_bytes());
 
         // Sign
         let der_sig_py = secp_sign_der_low_s(py, &sk_hex, &digest32).unwrap();

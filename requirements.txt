@@ -1,7 +1,7 @@
 appdirs==1.4.4
 bech32==1.2.0
 colorama==0.4.6
-cryptography==50.0.0
+cryptography==50.0.1
 ecdsa==0.19.2
 lmdb==2.3.0
 mnemonic==0.21
@@ -12,5 +12,5 @@ PyNaCl==1.6.2
 pytest==9.1.1
 pytest-mock==3.15.1
 python-vlc==3.0.21203
-rich>=13.0.0
+rich==15.0.0
 tqdm==4.70.0

@@ -7,7 +7,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyList, PyTuple};
 use sha2::{Digest, Sha256};
-use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
+use secp256k1::{ecdsa::Signature, Message, PublicKey};
 use ripemd::Ripemd160;
 
 fn encode_varint(v: usize, out: &mut Vec<u8>) {
@@ -446,8 +446,6 @@ pub fn validate_tx_p2wpkh_compact<'py>(
     }
     let hash_outputs = sha256d(&outs_cat);
 
-    let secp = Secp256k1::verification_only();
-
     let mut seen: HashMap<(Vec<u8>, u32), ()> = HashMap::new();
     let mut input_sum: u128 = 0;
     let mut sigops: u32 = 0;
@@ -533,7 +531,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
                     return Ok((false, Some("high_s".to_string()), None));
                 }
             }
-            if secp.verify_ecdsa(msg, &norm, &pk).is_err() {
+            if secp256k1::ecdsa::verify(&norm, msg, &pk).is_err() {
                 return Ok((false, Some("ecdsa_verify_failed".to_string()), None));
             }
 

@@ -4,7 +4,7 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
-use secp256k1::{Secp256k1, Message, SecretKey};
+use secp256k1::{Message, SecretKey};
 use ripemd::Ripemd160;
 use sha2::{Sha256, Digest};
 use std::sync::Once;
@@ -112,9 +112,8 @@ fn test_txcodec_basic() {
 fn test_txcodec_validate_p2wpkh_success() {
     init_python();
     Python::attach(|py| {
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_byte_array([0xcd; 32]).unwrap();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let sk = SecretKey::from_secret_bytes([0xcd; 32]).unwrap();
+        let pk = secp256k1::PublicKey::from_secret_key(&sk);
         let pk_bytes = pk.serialize();
         
         let pubkey_hash = hash160_bytes(&pk_bytes);
@@ -176,7 +175,7 @@ fn test_txcodec_validate_p2wpkh_success() {
         let mut digest_arr = [0u8; 32];
         digest_arr.copy_from_slice(sighash.as_bytes());
         let msg = Message::from_digest(digest_arr);
-        let sig = secp.sign_ecdsa(msg, &sk);
+        let sig = secp256k1::ecdsa::sign(msg, &sk);
         let mut sig_der = sig.serialize_der().to_vec();
         sig_der.push(1); // SIGHASH_ALL
         
@@ -259,9 +258,8 @@ fn test_txcodec_validate_errors() {
 fn test_txcodec_validate_duplicate_prevout() {
     init_python();
     Python::attach(|py| {
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_byte_array([0xcd; 32]).unwrap();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let sk = SecretKey::from_secret_bytes([0xcd; 32]).unwrap();
+        let pk = secp256k1::PublicKey::from_secret_key(&sk);
         let pk_bytes = pk.serialize();
         
         let pubkey_hash = hash160_bytes(&pk_bytes);
@@ -325,7 +323,7 @@ fn test_txcodec_validate_duplicate_prevout() {
         let mut digest_arr = [0u8; 32];
         digest_arr.copy_from_slice(sighash.as_bytes());
         let msg = Message::from_digest(digest_arr);
-        let sig = secp.sign_ecdsa(msg, &sk);
+        let sig = secp256k1::ecdsa::sign(msg, &sk);
         let mut sig_der = sig.serialize_der().to_vec();
         sig_der.push(1); // SIGHASH_ALL
         

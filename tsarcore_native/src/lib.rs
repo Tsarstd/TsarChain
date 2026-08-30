@@ -21,8 +21,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use secp256k1::SecretKey;
-use secp256k1::ecdsa::Signature;
-use secp256k1::{Message, PublicKey, Secp256k1};
+use secp256k1::ecdsa::{self, Signature};
+use secp256k1::{Message, PublicKey};
 
 use hex;
 use ripemd::Ripemd160;
@@ -490,7 +490,7 @@ pub fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyB
 // ---------------------
 #[pyfunction]
 pub fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyResult<bool> {
-    use secp256k1::{ecdsa::Signature, Message, Secp256k1};
+    use secp256k1::{ecdsa::Signature, Message};
 
     if digest32.len() != 32 {
         return Err(PyErr::new::<exceptions::PyValueError, _>(
@@ -522,8 +522,7 @@ pub fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> 
     d32.copy_from_slice(digest32);
     let msg = Message::from_digest(d32);
 
-    let secp = Secp256k1::verification_only();
-    Ok(secp.verify_ecdsa(msg, &norm, &pk).is_ok())
+    Ok(ecdsa::verify(&norm, msg, &pk).is_ok())
 }
 
 // ---------------------
@@ -545,14 +544,13 @@ pub fn secp_sign_der_low_s<'py>(
     let sk_arr: [u8; 32] = sk_bytes.try_into().map_err(|_| {
         PyErr::new::<exceptions::PyValueError, _>("privkey must be 32-byte secp256k1 key")
     })?;
-    let sk = SecretKey::from_byte_array(sk_arr).map_err(|_| {
+    let sk = SecretKey::from_secret_bytes(sk_arr).map_err(|_| {
         PyErr::new::<exceptions::PyValueError, _>("privkey must be 32-byte secp256k1 key")
     })?;
     let mut d32 = [0u8; 32];
     d32.copy_from_slice(digest32);
     let msg = Message::from_digest(d32);
-    let secp = Secp256k1::signing_only();
-    let sig = secp.sign_ecdsa(msg, &sk);
+    let sig = ecdsa::sign(msg, &sk);
     let mut norm = sig;
     norm.normalize_s();
     let der = norm.serialize_der();
@@ -830,7 +828,6 @@ pub fn secp_verify_der_low_s_many<'py>(
     parallel: bool,
 ) -> PyResult<Bound<'py, PyList>> {
     let t0 = Instant::now();
-    let ctx = Secp256k1::verification_only();
     let iter = PyIterator::from_object(&triples)?;
 
     let mut tasks: Vec<(Vec<u8>, [u8; 32], Vec<u8>)> = Vec::new();
@@ -874,9 +871,9 @@ pub fn secp_verify_der_low_s_many<'py>(
             if s2 != sig {
                 return false;
             }
-            ctx.verify_ecdsa(msg, &s2, &pk).is_ok()
+            ecdsa::verify(&s2, msg, &pk).is_ok()
         } else {
-            ctx.verify_ecdsa(msg, &sig, &pk).is_ok()
+            ecdsa::verify(&sig, msg, &pk).is_ok()
         }
     };
 
