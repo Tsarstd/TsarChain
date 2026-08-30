@@ -77,8 +77,8 @@ else
     echo "Python3 is already installed."
 fi
 
-# 4. INSTALL WEBSITE REQUIREMENTS ( Frontend & Backend )
-print_step "4/8: Checking/Installing Node.js & Website Dependencies..."
+# 4. INSTALL WEBSITE REQUIREMENTS ( Frontend Explorer )
+print_step "4/8: Checking/Installing Node.js & Frontend Explorer Dependencies..."
 if ! command -v npm &> /dev/null; then
     echo "npm not found. Installing Node.js..."
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -93,12 +93,10 @@ if ! command -v npm &> /dev/null; then
 fi
 
 if command -v npm &> /dev/null; then
-    echo "Installing Backend dependencies..."
-    (cd src/web/Backend && npm install)
-    echo "Installing Frontend dependencies..."
+    echo "Installing Frontend Explorer dependencies..."
     (cd src/web/Frontend && npm install)
 else
-    print_warn "npm is still not available. Skipping website dependencies."
+    print_warn "npm is still not available. Skipping frontend dependencies."
 fi
 
 # 5. SETUP VIRTUAL ENVIRONMENT

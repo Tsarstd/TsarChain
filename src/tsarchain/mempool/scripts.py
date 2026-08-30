@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from ..utils.helpers import Script, extract_script_bytes, script_to_address
+from ..utils.helpers import extract_script_bytes, script_to_address
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.mempool.scripts")
 

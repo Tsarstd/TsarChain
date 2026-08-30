@@ -102,7 +102,12 @@ python apps/cli_archivist.py
 python apps/wallet.py
 ```
 
-### E. Resetting Local Testnet Data
+### E. Running Web Explorer API Server (Backend)
+```bash
+python apps/web_server.py
+```
+
+### F. Resetting Local Testnet Data
 To wipe local chain state and restart a private testnet:
 ```bash
 # Windows PowerShell
@@ -129,7 +134,7 @@ cd ..
 $env:PYTHONPATH="src"; pytest
 
 # Single test file / module:
-$env:PYTHONPATH="src"; pytest tests/unit/tsarchain/consensus/blockchain_test.py -v
+$env:PYTHONPATH="src"; pytest tests/tsarchain/consensus/blockchain_test.py -v
 
 # Pytest with coverage report:
 $env:PYTHONPATH="src"; pytest --cov=src --cov-report=term-missing
@@ -178,7 +183,7 @@ python benchmarks/native_bench.py
 
 Before declaring success or submitting pull requests:
 1. Ensure all Rust unit tests pass (`cargo test` inside `tsarcore_native`).
-2. Ensure all Python unit tests pass (`$env:PYTHONPATH="src"; pytest tests/unit/ -v`).
+2. Ensure all Python unit tests pass (`$env:PYTHONPATH="src"; pytest tests/ -v`).
 3. Verify native extension builds without errors (`maturin develop --release`).
 4. Ensure guarded core consensus files (`src/tsarchain/consensus/`, `src/kremlin/security/`, `tests/`) maintain architectural integrity.
 5. Verify that **NO `isinstance()`, `hasattr()`, `getattr()`, or `setattr()` calls** have been introduced into `src/` or `apps/`.

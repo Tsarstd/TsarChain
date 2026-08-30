@@ -209,491 +209,631 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
   ```
   </details>
 
-#### 1. 💸 Example of a Transaction Data Structure
-The example data of `block, utxo's & mempool` below, shows a transaction :
-> address `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` sent 2300 coins + 0.00004900 fee to address `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`,
-> then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block height 10
-- ***Block Data Structure (`chain.json` / LMDB `chain` subdb):***
+#### 1. 💸 Example of a Standard Transaction & Mining Lifecycle (Block Height 6)
+The serialized data below demonstrates a standard financial transfer and block consensus lifecycle:
+> **Activity Storyline**:
+> - **Sender**: `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` transfers **1,200 TSAR** (`120,000,000,000` sats) to recipient `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`.
+> - **Inputs & Change**: The transaction consumes 3 UTXOs totaling `250,050,000,000,000` sats, producing `120,000,000,000` sats to the recipient and returning `249,929,999,990,616` sats back to the sender as unspent change.
+> - **Network Fee**: The difference between inputs and outputs yields a transaction fee of **9,384 sats**.
+> - **Miner Execution**: Miner `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` solves PoW at **Block Height 6** (Block ID: `Widji_Thukul_1998_ycVSTvaTl`, Nonce: `920`, Difficulty: `5018`) and receives the block subsidy of 250 TSAR + 9,384 sats fee, totaling `"reward": 25000009384`. Notice that Coinbase transactions strictly display `"reward"` and omit the redundant `"fee": 0`, while the block header records `"total_fee": 9384`.
+
+- ***Block Data Structure (Height 6):***
   > Storage Engine: Stored as pure binary blocks (80B Header + 24B Meta + Serialized Witness Txs) indexed by `h:{height:012d}` with a global `__meta__` header.
   <details>
-    <summary>See Preview</summary>
+    <summary>See Preview (Block Height 6)</summary>
 
   ```json
-  "h:000000000010": {
-    "bits": 520891868,
-    "hash": "0002ad9c5a26748032625d4a95d1df44e9bd4f7d69064c0dcc7e52673706c128",
-    "height": 10,
-    "merkle_root": "9042794daf2d482b486f912cbb043f22c1505c7d1f7fd07cceea8a55b9b2feaa",
-    "nonce": 4030,
-    "prev_block_hash": "0008509a86bf895c69201986b7fad8ac3013dec48020aab8975f835d812dcd38",
-    "size_bytes": 1695,
-    "timestamp": 1764669449,
-    "tx_count": 2,
+  "h:000000000006": {
+    "height": 6,
     "version": 1,
-    "weight": 6780,
+    "prev_block_hash": "000e9e3a6e336735311599ca61cf2bd9223b5acc1ebd6fa8593ccef288664a9c",
+    "merkle_root": "715696c865a49556730be207d9b865b6098884e8b376cc0a4a814f03451cc16b",
+    "timestamp": 1787992798,
+    "difficulty": 5018,
+    "chainwork": 19951,
+    "bits": 520949608,
+    "nonce": 920,
+    "hash": "000cca3103f2e51f2d7fc863a0d6a0faaa6cdf59cdef9d5ec504f9da155708de",
+    "total_fee": 9384,
     "transactions": [
       {
-        "block_id": "Evan_Gershkovich_2023_fv8Zsb0I4",
-        "fee": 0,
-        "height": 10,
+        "version": 1,
         "inputs": [
           {
-            "amount": 0,
-            "script_sig": "010a1f4576616e5f47657273686b6f766963685f323032335f6676385a7362304934",
             "txid": "0000000000000000000000000000000000000000000000000000000000000000",
             "vout": 4294967295,
+            "amount": 0,
+            "script_sig": "01061b5769646a695f5468756b756c5f313939385f79635653547661546c",
             "witness": []
           }
         ],
-        "is_coinbase": true,
-        "locktime": 0,
         "outputs": [
           {
-            "amount": 25000004900,
-            "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+            "amount": 25000009384,
+            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
           }
         ],
-        "reward": 25000004900,
-        "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-        "txid": "4a5aa34596685b8eeff5f40ce6cf53fece1cd57e6a8cce9c984c7334ea36d2b4",
+        "locktime": 0,
+        "txid": "fb26388bd2d22e7c7136820bb6ef49b551606155bd3d980600df065616332e8c",
+        "is_coinbase": true,
         "type": "Coinbase",
-        "version": 1
+        "to_address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+        "reward": 25000009384,
+        "block_id": "Widji_Thukul_1998_ycVSTvaTl",
+        "height": 6
       },
       {
-        "fee": 4900,
+        "version": 1,
         "inputs": [
           {
-            "amount": 2500000000000,
-            "script_sig": "",
-            "txid": "9555fe396baf338bb3b8c27fa30b414ce1eeecd830a416895ab12eecf5188e45",
+            "txid": "3e2a4f4fca0f9f052eda60968cd8132350aaeb6d14bc90f1a5b67be1c4570ec7",
             "vout": 0,
+            "amount": 25000000000,
+            "script_sig": "",
             "witness": [
-              "3045022100d51d37097042d95a552218df5130347e9b090630447b9e00d88a7eb52af4599b0220501544279d82de6d795588b538e5e3461cd962c25339ba723a7541f942a68a5d01",
+              "30450221008c42ce48ad16df48230352d8e4a67280cc264ec1cb0fad4125f22e3b3a91c4f2022052332a1648fe668ff6b79a35d15312f87d04690f02ae48e99d54bbbe02860d9501",
+              "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
+            ]
+          },
+          {
+            "txid": "56b8535a7e5d448bd2e9281a5252721940a28fa7061d1ff7eebad77762a92bc5",
+            "vout": 0,
+            "amount": 25000000000,
+            "script_sig": "",
+            "witness": [
+              "3045022100ef2658fd25953a828c083962f46bba753358d185680bbd146131ccd962b3eba3022060df0b75072d36c1551c20cd0a5daf0946bc20cda7fb338fdbb2c97b8c75a6ba01",
+              "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
+            ]
+          },
+          {
+            "txid": "48a8a5daaaddad645dc4ec8557740101410c82b49abd37f530a71720642ff75d",
+            "vout": 0,
+            "amount": 250000000000000,
+            "script_sig": "",
+            "witness": [
+              "3045022100ffa18ed9ecf89f84afe2f51c8184ec63a0ae19817679924126abb443517dd24a02200df23da22c3b3fe6a066100af77fee221ef47ebb46974d98180b207c6325d34b01",
               "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
             ]
           }
         ],
-        "is_coinbase": false,
-        "locktime": 0,
         "outputs": [
           {
-            "amount": 230000000000,
+            "amount": 120000000000,
             "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
           },
           {
-            "amount": 2269999995100,
+            "amount": 249929999990616,
             "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
           }
         ],
-        "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
-        "version": 1
+        "locktime": 0,
+        "txid": "48fcebb8ea89b09d2db51ec842867a17f9b9194a363f3d7d7ee0dfd15b39a5b6",
+        "fee": 9384,
+        "is_coinbase": false
       }
     ]
   }
   ```
   </details>
 
-- ***UTXO's Data Structure (`utxo.json` / LMDB `utxo` subdb):***
+- ***UTXO Data Structure :***
   > Storage Engine: Compact binary struct `<Q?qH` (19 bytes: amount, is_coinbase, block_height, spk_len) + raw `script_pubkey` bytes keyed by `txid:vout`.
   <details>
-    <summary>See Preview</summary>
+    <summary>See Preview (UTXO State)</summary>
 
   ```json
-  "4a5aa34596685b8eeff5f40ce6cf53fece1cd57e6a8cce9c984c7334ea36d2b4:0": {
-    "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-    "amount": 25000004900,
-    "block_height": 10,
-    "is_coinbase": true,
-    "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f",
-    "script_type": "p2wpkh"
-  },
-  "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5:0": {
-    "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
-    "amount": 230000000000,
-    "block_height": 10,
-    "is_coinbase": false,
-    "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4",
-    "script_type": "p2wpkh"
-  },
-  "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5:1": {
-    "address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
-    "amount": 2269999995100,
-    "block_height": 10,
-    "is_coinbase": false,
-    "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a",
-    "script_type": "p2wpkh"
+  {
+    "__meta__": {
+      "schema_version": 1,
+      "generated_at": 1787997234,
+      "backend": "lmdb",
+      "utxo_set_size": 16,
+      "tip_height_hint": 16
+    },
+    "cea7d1c2149cb009f9ea9671bdb87346a2136701e8c7639d67ea1f71b1e1ab27:1": {
+      "amount": 114959994186,
+      "is_coinbase": false,
+      "block_height": 8,
+      "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4",
+      "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23"
+    },
+    "5d4bca9582e09e2bc91613cdc20372f5c6344f167ebdef9188d21514169a93e0:0": {
+      "amount": 25000009384,
+      "is_coinbase": true,
+      "block_height": 10,
+      "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a",
+      "address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr"
+    },
+    "fbd48a867f3d832c9ea8141f12ae6e34ea22dac7b82ac9d646db220e9102b4f0:0": {
+      "amount": 280000000,
+      "is_coinbase": false,
+      "block_height": 11,
+      "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4",
+      "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23"
+    }
   }
   ```
   </details>
 
-- ***MemPool Data Structure (`mempool.json` / LMDB `mempool` subdb):***
+- ***MemPool Data Structure:***
   > Storage Engine: Compact binary header `<dIII` (received_at, fee, vsize, weight) + serialized witness `Tx` bytes keyed by `txid`.
   <details>
     <summary>See Preview</summary>
 
   ```json
-  "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5": {
-    "fee": 4900,
-    "fee_rate": 23.902439024390244,
-    "inputs": [
-      {
-        "amount": 2500000000000,
-        "script_sig": "",
-        "txid": "9555fe396baf338bb3b8c27fa30b414ce1eeecd830a416895ab12eecf5188e45",
-        "vout": 0,
-        "witness": [
-          "3045022100d51d37097042d95a552218df5130347e9b090630447b9e00d88a7eb52af4599b0220501544279d82de6d795588b538e5e3461cd962c25339ba723a7541f942a68a5d01",
-          "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
-        ]
-      }
-    ],
-    "is_coinbase": false,
-    "locktime": 0,
-    "outputs": [
-      {
-        "amount": 230000000000,
-        "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
-      },
-      {
-        "amount": 2269999995100,
-        "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
-      }
-    ],
-    "received_at": 1764669428.5156598,
-    "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
-    "vbytes": 205,
-    "version": 1,
-    "weight": 820
-  }
-  ```
-  </details>04b5:1": {
-      "address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // sender
-      "block_height": 10,
+  {
+    "7636d98618633c95ac5891405f4ec34b8b4b1973c1d944c447744422f0136cc3": {
+      "version": 1,
+      "inputs": [
+        {
+          "txid": "fbd48a867f3d832c9ea8141f12ae6e34ea22dac7b82ac9d646db220e9102b4f0",
+          "vout": 0,
+          "amount": 280000000,
+          "script_sig": "",
+          "witness": [
+            "30440220236e0f38f30423f096e0e27fdd9809922a4e520b14403d7e847fe96160b726bb022040d9a45a391e2c592204bbd0b8df2ce007653306e4f0fccb8e3456b04b109b9d01",
+            "020f4c2347cb74eee085bae4d7579305ca58beeb1a2797493e371efb78e7e7d558"
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "amount": 21000000000,
+          "script_pubkey": "0014e1171c06610cfbf85af0cfe1e53060e436585ddf"
+        },
+        {
+          "amount": 33279992928,
+          "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+        }
+      ],
+      "locktime": 0,
+      "txid": "7636d98618633c95ac5891405f4ec34b8b4b1973c1d944c447744422f0136cc3",
+      "fee": 7072,
       "is_coinbase": false,
-      "script_type": "p2wpkh",
-      "tx_out": {
-        "amount": 2269999995100,
-        "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+      "_meta": {
+        "received_at": 1787997212.4835243,
+        "fee": 7072,
+        "vbytes": 389,
+        "weight": 1556
       }
     }
-  ```
-  </details>
-
-- ***MemPool Data Structure (.json):***
-  <details>
-    <summary>See Preview</summary>
-
-  ```json
-  {
-    "meta": {
-      "count": 1,
-      "generated_at": 1764669428,
-      "max_size_bytes": 1048576,
-      "schema_version": 1,
-      "virtual_size": 205
-    },
-    "schema_version": 1,
-    "txs": [
-      {
-        "_meta": {
-          "fee_rate": 23.902439024390244,
-          "received_at": 1764669428.5156598,
-          "schema_version": 1,
-          "vbytes": 205,
-          "weight": 820
-        },
-        "fee": 4900,
-        "inputs": [
-          {
-            "amount": 2500000000000,
-            "script_sig": "",
-            "txid": "9555fe396baf338bb3b8c27fa30b414ce1eeecd830a416895ab12eecf5188e45",
-            "vout": 0,
-            "witness": [
-              "3045022100d51d37097042d95a552218df5130347e9b090630447b9e00d88a7eb52af4599b0220501544279d82de6d795588b538e5e3461cd962c25339ba723a7541f942a68a5d01",
-              "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
-            ]
-          }
-        ],
-        "is_coinbase": false,
-        "locktime": 0,
-        "outputs": [
-          {
-            "amount": 230000000000,
-            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4" // recipient
-          },
-          {
-            "amount": 2269999995100,
-            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a" // sender
-          }
-        ],
-        "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
-        "version": 1
-      }
-    ]
   }
   ```
   </details>
 
-#### 2. 🎨 Example of a Graffiti Activity Data Structure
-The example data of `block (height 18), block (height 22), block (height 29), metadata & indexer` below, shows graffiti activity :
-> creator `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` uploads graffiti art (80,358 bytes) and pays 0.8 coins to the network, validated in `block height 18`
+---
 
-> then commenter `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23` comments on the graffiti art with 1 coin + 2 coins creator tip, validated in `block height 22`
+#### 2. 🎨 Example of Graffiti Lifecycle Activities (Upload, Comment & Storage Payout)
+The examples below illustrate the 3 progressive stages of the Graffiti Protocol lifecycle across **Block Height 8**, **Block Height 11**, and **Block Height 14**:
 
-> archivist `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` (storage node) receives payouts of 0.6 coin from the pool address `tsar1qm0vgpssx8w95ddktmfg86ahhy863nu2u42w5qceh3n24xkvk83mqqa2jng`, validated in `block height 29`
+##### A. Graffiti POST: Media Upload & Escrow Staking (Block Height 8)
+> **Activity Storyline**:
+> - **Creator**: `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23` uploads a 65.08 MB video MP4 (`65,087,599` bytes) with Merkle root `d9e827b5...` split into 636 chunks.
+> - **Escrow Staking**: Staking **50.4 TSAR** (`5,040,000,000` sats) locked to storage escrow pool `tsar1qe8refmphnysxyp67elcfzfke4jhn338nyssnctka2m48rfzvvpsswgq0cf`, assigning Archivist node `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` as the designated data storer.
+> - **Consensus**: Confirmed in **Block Height 8** with tx fee `5,814` sats (`total_fee: 15198`).
 
-- ***Block (graffiti post - height 18) Data Structure (`chain.json`):***
+- ***Block Data Structure (Graffiti POST - Height 8):***
   <details>
-    <summary>See Preview</summary>
+    <summary>See Preview (Block Height 8)</summary>
 
   ```json
-  "h:000000000018": {
-    "bits": 521525829,
-    "hash": "0000c537b986eb97881f942e6f5e716cbe544029fd3ea697eb85c99ee9f636f8",
-    "height": 18,
-    "merkle_root": "35331b2172cff6289e0f3f85db0d441f8e760531fe92f493b7c08ef9b9c3a06c",
-    "nonce": 2816,
-    "prev_block_hash": "00012e0e71f14de12c889b94c5459cead2a93fca5ba1a281a4dd1053a844b6a4",
-    "size_bytes": 2747,
-    "timestamp": 1764670983,
-    "tx_count": 2,
+  "h:000000000008": {
+    "height": 8,
     "version": 1,
-    "weight": 10988,
+    "prev_block_hash": "000a2567301ebfb7cd1b2436d948807c7692a1e7d6b2251ce2f802af80f0dd1b",
+    "merkle_root": "39db418529d961827c1025f7581f2a227e14d1d1e5faa763ca8a32c1c4a56072",
+    "timestamp": 1787992854,
+    "difficulty": 6375,
+    "chainwork": 31342,
+    "bits": 520767416,
+    "nonce": 6824,
+    "hash": "0005a227d9a253b9cc640829e38b0e85108572fdfb2fcadf58b4e0f4f5724103",
+    "total_fee": 15198,
     "transactions": [
       {
-        "block_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
-        "fee": 0,
-        "height": 18,
+        "version": 1,
         "inputs": [
           {
-            "amount": 0,
-            "script_sig": "01124067726166643939663136646465343361386332373430333936626136613731643866313636363631326334613937393064373036306564666532333663666438",
             "txid": "0000000000000000000000000000000000000000000000000000000000000000",
             "vout": 4294967295,
+            "amount": 0,
+            "script_sig": "01084067726166383635376262633264383562633833363066333165323532613135336261666632393039633536363161643131333834636166656639306433633366",
             "witness": []
           }
         ],
-        "is_coinbase": true,
-        "locktime": 0,
         "outputs": [
           {
-            "amount": 25000000171,
-            "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+            "amount": 25000015198,
+            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
           }
         ],
-        "reward": 25000000171,
-        "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-        "txid": "04fcd1e79630b9fa6c72fa6dea902eba662a6f8dd0ecb63fb9e0f308117d85ae",
+        "locktime": 0,
+        "txid": "6da8cc5d21132597e3b0dfc07fc4b172931e0ec0c1cf1f15e124729702e612b2",
+        "is_coinbase": true,
         "type": "Coinbase",
-        "version": 1
+        "to_address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+        "reward": 25000015198,
+        "block_id": "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f",
+        "height": 8
       },
       {
-        "fee": 171,
+        "version": 1,
         "inputs": [
           {
-            "amount": 2269999995100,
+            "txid": "48fcebb8ea89b09d2db51ec842867a17f9b9194a363f3d7d7ee0dfd15b39a5b6",
+            "vout": 0,
+            "amount": 120000000000,
             "script_sig": "",
-            "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
-            "vout": 1,
             "witness": [
-              "3045022100886859c0595f78167d8e914be72ca17a4ae6e51c3c61fe8ab3370f1148364aa802200860248bd8f8e7aa94d761acb76571cc3503d188080aa965c9bcc532af321e6c01",
-              "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
+              "3044022009dfe6d27bb25a51725d0edc78966f376d8a8bd4561c015a66a10eb2d177c4c102200f3369206106b80d630e58b887ed28884292d7633328a7ad1ded4ebec8fb045901",
+              "020f4c2347cb74eee085bae4d7579305ca58beeb1a2797493e371efb78e7e7d558"
             ]
           }
         ],
-        "is_coinbase": false,
-        "locktime": 0,
         "outputs": [
           {
-            "amount": 80000000,
-            "script_pubkey": "0020dbd880c2063b8b46b6cbda507d76f721f519f15caa9d4063378cd55359963c76"
+            "amount": 5040000000,
+            "script_pubkey": "0020c9c794ec37992062075ecff09126d9acaf38c4f324213c2edd56ea71a44c6061"
           },
           {
-            "amount": 2269919994929,
-            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+            "amount": 114959994186,
+            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
           },
           {
             "amount": 0,
-            "script_pubkey": "6a4dbd01545341525f47524146317c7b22736861323536223a2239623239636637393561663630653737656537303764663233356632373665383235666330656530663063373562386237366430646432396637636466373031222c226172745f6964223a2267726166643939663136646465343361386332373430333936626136613731643866313636363631326334613937393064373036306564666532333663666438222c2273697a65223a38303335382c226d696d65223a22696d6167652f6a706567222c2273746f726572223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c2272656365697074223a22726370745f396232396366373935616636306537376565373037646632333566323736653832356663306565306630633735623862373664306464323966376364663730315f313736343637303932395f31373634363730393239222c226576656e74223a22504f5354222c2263726561746f72223a22747361723171616b66366d6c65363036616d6e3778756d767a346b36797536637a306d787136706535717772222c227473223a313736343637303932397d"
+            "script_pubkey": "6a4d1c02545341525f47524146317c7b22736861323536223a2237303961353862316161393736313663633566353366303966643363643563666131356435626637623538616665633561363237393533653434353132313861222c226172745f6964223a2267726166383635376262633264383562633833363066333165323532613135336261666632393039633536363161643131333834636166656639306433633366222c2273697a65223a36353038373539392c226d696d65223a22766964656f2f6d7034222c2273746f726572223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c2272656365697074223a22726370745f373039613538623161613937363136636335663533663039666433636435636661313564356266376235386166656335613632373935336534343531323138615f31373837393932383334222c226576656e74223a22504f5354222c2263726561746f72223a227473617231716e3736663564333278653934303568737465756a6a79797561687263796e683563786a773233222c226d726f6f74223a2264396538323762353338363365373937333566396261383365346164646363343833643561653765396430623365643730663263653562616338333432306536222c226d6368756e6b223a3130323430302c226d636f756e74223a3633362c227473223a313738373939323833377d"
           }
         ],
-        "txid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a",
-        "version": 1
+        "locktime": 0,
+        "txid": "cea7d1c2149cb009f9ea9671bdb87346a2136701e8c7639d67ea1f71b1e1ab27",
+        "fee": 5814,
+        "is_coinbase": false
       }
     ]
   }
   ```
   </details>
 
-- ***Graffiti Database Architecture (`graffiti/` sub-files):***
-  > Storage Engine: Granular isolated binary records with fast prefix seeking:
-  > - `posts.json` (key `p:{art_id}`) — Binary header `<QQQQIIiI` + canonical JSON payload.
-  > - `comments.json` (key `c:{art_id}:{idx:08d}`) — Binary header `<QQQQQII` + canonical JSON payload.
-  > - `payouts.json` (key `y:{art_id}:{idx:08d}`) — Binary header `<IQiI` + canonical JSON payload.
-  > - `proofs.json` (key `r:{art_id}:{idx:08d}`) — Binary header `<QQIIQI` + canonical JSON payload.
-
-  <details>
-    <summary>See Preview (posts.json)</summary>
-
-  ```json
-  {
-    "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": {
-      "amount_paid": 80000000,
-      "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
-      "block_hash": "0000c537b986eb97881f942e6f5e716cbe544029fd3ea697eb85c99ee9f636f8",
-      "block_height": 18,
-      "creator": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
-      "mime": "image/jpeg",
-      "pool_address": "tsar1qm0vgpssx8w95ddktmfg86ahhy863nu2u42w5qceh3n24xkvk83mqqa2jng",
-      "receipt": "rcpt_9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929_1764670929",
-      "sha256": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701",
-      "size": 80358,
-      "stats": {
-        "comments": 1,
-        "creator_paid": 280000000,
-        "last_paid_epoch": 0,
-        "pool_balance": 29993000,
-        "storage_paid": 10000000
-      },
-      "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
-      "txid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a"
-    }
-  }
-  ```
-  </details>
-
-  <details>
-    <summary>See Preview (comments.json)</summary>
-
-  ```json
-  {
-    "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": [
-      {
-        "amount": 100000000,
-        "block_height": 22,
-        "comment": "64616d6e21",
-        "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
-        "creator_paid": 280000000,
-        "storage_paid": 10000000,
-        "tip": 200000000,
-        "ts": 1764671052,
-        "txid": "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576"
-      }
-    ]
-  }
-  ```
-  </details>
-
-  <details>
-    <summary>See Preview (payouts.json)</summary>
-
-  ```json
-  {
-    "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": [
-      {
-        "amount": 60000000,
-        "block_height": 29,
-        "epoch": 0,
-        "recipients": {
-          "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07": 60000000
-        },
-        "txid": "cf5a20bfc3ac20250b1556cad466c4d1a6e937a6e7c8f645a6ff961e78dfe46d"
-      }
-    ]
-  }
-  ```
-  </details>
-
-  <details>
-    <summary>See Preview (proofs.json - Proof of Retention)</summary>
-
-  ```json
-  {
-    "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": [
-      {
-        "epoch": 1,
-        "hash": "4da974820fa3deac4f0925e845835f32623176054676a3cc28d318b45ee6d8ca",
-        "height": 20,
-        "length": 4096,
-        "offset": 38125,
-        "seed": "f85e9f9f688c31a10420b4e53dff4b32897ee7d1b57f65cc65d22c7e866ede05",
-        "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
-        "ts": 1764671085
-      },
-      {
-        "epoch": 2,
-        "hash": "561aa6cabaeb6aebf7a40b469707a91ac5ca4a549efc96ffeb7bf3b654f3f164",
-        "height": 30,
-        "length": 4096,
-        "offset": 39894,
-        "seed": "24b28bae39021760f0a06df9701dfb49888dcd50d698f1d12c7fc145187af0fe",
-        "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
-        "ts": 1764672806
-      }
-    ]
-  }
-  ```
-  </details>
-
-- ***Graffiti (indexer) in Storage Node (`index.json`):***
+- ***Graffiti Post Registry:***
   <details>
     <summary>See Preview</summary>
 
   ```json
   {
-    "files": {
-      "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929": {
-        "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
-        "bytes_used": 80358,
-        "chunk_size": 102400,
-        "confirmed_at_height": 18,
-        "created_ts": 1764670929,
-        "expire_at_height": 0,
-        "filename": "graff_test.jpg",
-        "last_proof_epoch": 2,
-        "last_proof_hash": "561aa6cabaeb6aebf7a40b469707a91ac5ca4a549efc96ffeb7bf3b654f3f164",
-        "last_proof_height": 30,
-        "last_proof_length": 4096,
-        "last_proof_offset": 39894,
-        "last_proof_ts": 1764672806,
-        "missed_proofs": 0,
-        "paid": true,
-        "path": "data/storage/final/9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929.bin",
-        "proof_fail_reason": "",
-        "proof_status": "ok",
-        "receipt_id": "rcpt_9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929_1764670929",
-        "received_bytes": 80358,
-        "sha256": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701",
-        "size_bytes": 80358,
-        "state": "stored",
-        "stored_ts": 1764670929,
-        "txid_paid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a",
-        "updated_ts": 1764670929
+    "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f": {
+      "sha256": "709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a",
+      "size": 65087599,
+      "mime": "video/mp4",
+      "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+      "receipt": "rcpt_709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a_1787992834",
+      "creator": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
+      "block_hash": "0005a227d9a253b9cc640829e38b0e85108572fdfb2fcadf58b4e0f4f5724103",
+      "mroot": "d9e827b53863e79735f9ba83e4addcc483d5ae7e9d0b3ed70f2ce5bac83420e6",
+      "mchunk": 102400,
+      "mcount": 636,
+      "art_id": "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f",
+      "txid": "cea7d1c2149cb009f9ea9671bdb87346a2136701e8c7639d67ea1f71b1e1ab27",
+      "block_height": 8,
+      "pool_address": "tsar1qe8refmphnysxyp67elcfzfke4jhn338nyssnctka2m48rfzvvpsswgq0cf",
+      "amount_paid": 5040000000,
+      "stats": {
+        "pool_balance": 0,
+        "creator_paid": 280000000,
+        "storage_paid": 10000000,
+        "comments": 1,
+        "last_paid_epoch": 0
       }
     }
   }
   ```
   </details>
 
-- ***🖼️ Graffiti & Comment Activity in Explorer Tab Wallet:***
+- ***Archivist Storage Indexer:***
   <details>
-    <summary>Graffiti (block 18)</summary>
-    <img src="../assets/screenshoot/graffiti.png">
-  </details>
-  <details>
-    <summary>Comment (block 22)</summary>
-    <img src="../assets/screenshoot/comment.png">
-  </details>
-  <details>
-    <summary>Graffiti Examples</summary>
-    <img src="../assets/screenshoot/ss_graf1.png">
-    <img src="../assets/screenshoot/ss_graff2.png">
+    <summary>See Preview</summary>
+
+  ```json
+  {
+    "art:graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f": "709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a_1787992834",
+    "file:709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a_1787992834": {
+      "size_bytes": 65087599,
+      "sha256": "709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a",
+      "filename": "testing.mp4",
+      "mime": "video/mp4",
+      "paid": true,
+      "expire_at_height": 0,
+      "confirmed_at_height": 8,
+      "state": "stored",
+      "path": "data/archivist/storage/blobs/709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a_1787992834.bin",
+      "received_bytes": 65087599,
+      "chunk_size": 10485760,
+      "created_ts": 1787992834,
+      "mroot": "d9e827b53863e79735f9ba83e4addcc483d5ae7e9d0b3ed70f2ce5bac83420e6",
+      "mchunk": 102400,
+      "mcount": 636,
+      "art_id": "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f",
+      "updated_ts": 1787992837,
+      "receipt_id": "rcpt_709a58b1aa97616cc5f53f09fd3cd5cfa15d5bf7b58afec5a627953e4451218a_1787992834",
+      "txid_paid": "cea7d1c2149cb009f9ea9671bdb87346a2136701e8c7639d67ea1f71b1e1ab27",
+      "last_proof_epoch": 1,
+      "last_proof_ts": 1787993199,
+      "last_proof_offset": 33689600,
+      "last_proof_length": 102400,
+      "last_proof_hash": "8e30b47146bb18498c8535afc8e3ba4e6142190ca0605bf1679e9954c000df32",
+      "last_proof_height": 15,
+      "missed_proofs": 0,
+      "proof_fail_reason": "",
+      "proof_status": "ok"
+    }
+  }
+  ```
   </details>
 
-#### 3. 🌐 Example of a State Data Structure
+---
+
+##### B. Graffiti COMMENT: Social Appreciation & Revenue Split (Block Height 11)
+> **Activity Storyline**:
+> - **Commenter**: `tsar1quyt3cpnppnalskhsels72vrqusm9shwl229mwq` posts comment `"wkwkwkwkw masoook"` on artwork `graf8657bbc...`.
+> - **Payment Split**: Pays 1 TSAR comment fee + 2 TSAR creator tip (total 3 TSAR). The on-chain consensus splits this deterministically:
+>   1. **2.8 TSAR** (`280,000,000` sats) sent directly to Creator `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`.
+>   2. **0.1 TSAR** (`10,000,000` sats) sent to Storage Pool `tsar1qe8refmphnysxyp67elcfzfke4jhn338nyssnctka2m48rfzvvpsswgq0cf`.
+>   3. Change returned to the commenter.
+> - **Consensus**: Confirmed in **Block Height 11** with tx fee `6,868` sats (`total_fee: 6868`).
+
+- ***Block Data Structure (Graffiti COMMENT - Height 11):***
+  <details>
+    <summary>See Preview (Block Height 11)</summary>
+
+  ```json
+  "h:000000000011": {
+    "height": 11,
+    "version": 1,
+    "prev_block_hash": "000ab3dd0e3647b13fb240dbb7fb191617253c1150073441c6b0d32647c2c6ae",
+    "merkle_root": "deb8e616636feb55f42192b21b0af6d555a43e2e12d3967213a5e236f8ed0f5c",
+    "timestamp": 1787992953,
+    "difficulty": 4750,
+    "chainwork": 46605,
+    "bits": 520997899,
+    "nonce": 2996,
+    "hash": "00048c8ea8e7d0a6bcc6b6329f2c3cc70db2b229bb2630f589f8fbdaddf40b1d",
+    "total_fee": 6868,
+    "transactions": [
+      {
+        "version": 1,
+        "inputs": [
+          {
+            "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+            "vout": 4294967295,
+            "amount": 0,
+            "script_sig": "010b205368697265656e5f4162755f416b6c65685f323032325f3041394d4568313034",
+            "witness": []
+          }
+        ],
+        "outputs": [
+          {
+            "amount": 25000006868,
+            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+          }
+        ],
+        "locktime": 0,
+        "txid": "e841b36aea957934923b47c3c5e82eb06c4367c6f55918c2890c0040004d1a6e",
+        "is_coinbase": true,
+        "type": "Coinbase",
+        "to_address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+        "reward": 25000006868,
+        "block_id": "Shireen_Abu_Akleh_2022_0A9MEh104",
+        "height": 11
+      },
+      {
+        "version": 1,
+        "inputs": [
+          {
+            "txid": "54d9b7d4a7feae09bdfea5956f0407a4374e545f08eeb432ea44d752db69ab3a",
+            "vout": 0,
+            "amount": 160000000000,
+            "script_sig": "",
+            "witness": [
+              "304402202d3929df98f083ace00314c82702667ccc197a4aee1b0b7c7430d0b3aeed294b0220268c35cfc710c43c6e7193450ebc868d12cd285a017206e2adf66208a861f2d301",
+              "022986cb2d336e016d249ab09eb637aa2e3e1e2d567f1fbc97308a750949a57fda"
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "amount": 280000000,
+            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+          },
+          {
+            "amount": 10000000,
+            "script_pubkey": "0020c9c794ec37992062075ecff09126d9acaf38c4f324213c2edd56ea71a44c6061"
+          },
+          {
+            "amount": 159709993132,
+            "script_pubkey": "0014e1171c06610cfbf85af0cfe1e53060e436585ddf"
+          },
+          {
+            "amount": 0,
+            "script_pubkey": "6a4d4001545341525f47524146317c7b226576656e74223a22434f4d4d454e54222c226172745f6964223a2267726166383635376262633264383562633833363066333165323532613135336261666632393039633536363161643131333834636166656639306433633366222c22636f6d6d656e74223a2237373662373736623737366237373662373732303664363137333666366636663662222c22616d6f756e74223a3130303030303030302c22746970223a3230303030303030302c2263726561746f72223a227473617231716e3736663564333278653934303568737465756a6a79797561687263796e683563786a773233222c22636f6d6d656e746572223a227473617231717579743363706e70706e616c736b6873656c73373276727175736d397368776c3232396d7771222c227473223a313738373939323933387d"
+          }
+        ],
+        "locktime": 0,
+        "txid": "fbd48a867f3d832c9ea8141f12ae6e34ea22dac7b82ac9d646db220e9102b4f0",
+        "fee": 6868,
+        "is_coinbase": false
+      }
+    ]
+  }
+  ```
+  </details>
+
+- ***Graffiti Comment Registry:***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+  {
+    "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f": [
+      {
+        "txid": "fbd48a867f3d832c9ea8141f12ae6e34ea22dac7b82ac9d646db220e9102b4f0",
+        "block_height": 11,
+        "comment": "776b776b776b776b77206d61736f6f6f6b",
+        "commenter": "tsar1quyt3cpnppnalskhsels72vrqusm9shwl229mwq",
+        "amount": 100000000,
+        "tip": 200000000,
+        "creator_paid": 280000000,
+        "storage_paid": 10000000,
+        "ts": 1787992938
+      }
+    ]
+  }
+  ```
+  </details>
+
+---
+
+##### C. Proof-of-Retention & Storage Payout: Archivist Reward (Block Height 14)
+> **Activity Storyline**:
+> - **Proof-of-Retention**: Archivist node `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` fulfills Proof-of-Retention challenges verifying 100 KB chunks across epochs.
+> - **Escrow Release**: The network consensus triggers an automatic payout transaction spending from escrow pool address `tsar1qe8refmphnysxyp67elcfzfke4jhn338nyssnctka2m48rfzvvpsswgq0cf`.
+> - **Reward Disbursement**: Archivist receives **50.49976982 TSAR** (`5,049,976,982` sats) for successfully retaining and serving the digital file.
+> - **Consensus**: Confirmed in **Block Height 14** with tx fee `23,018` sats (`total_fee: 23018`).
+
+- ***Block Data Structure (Graffiti PAYOUT - Height 14):***
+  <details>
+    <summary>See Preview (Block Height 14)</summary>
+
+  ```json
+  "h:000000000014": {
+    "height": 14,
+    "version": 1,
+    "prev_block_hash": "00014d7762ddde6fa86049064614b7114b799fefa9cdf987f4fbde504a8687cd",
+    "merkle_root": "7f9c6087967512d67b8e6486f3a5d71f44f36c4e8e4ae8b8e980c33f0b84daab",
+    "timestamp": 1787993086,
+    "difficulty": 4521,
+    "chainwork": 62176,
+    "bits": 521043699,
+    "nonce": 5748,
+    "hash": "000cfff77aef211e61582a9ff9561df90ba655e3bc2a695f5d7ed93d982591c0",
+    "total_fee": 23018,
+    "transactions": [
+      {
+        "version": 1,
+        "inputs": [
+          {
+            "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+            "vout": 4294967295,
+            "amount": 0,
+            "script_sig": "010e1841695f5765697765695f323031315f6e3763745677576d51",
+            "witness": []
+          }
+        ],
+        "outputs": [
+          {
+            "amount": 25000023018,
+            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+          }
+        ],
+        "locktime": 0,
+        "txid": "ac571f2fc5c18a804d94d89a4c6a5fbe240e0e27218bd078eacf34a15de9cffe",
+        "is_coinbase": true,
+        "type": "Coinbase",
+        "to_address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+        "reward": 25000023018,
+        "block_id": "Ai_Weiwei_2011_n7ctVwWmQ",
+        "height": 14
+      },
+      {
+        "version": 1,
+        "inputs": [
+          {
+            "txid": "cea7d1c2149cb009f9ea9671bdb87346a2136701e8c7639d67ea1f71b1e1ab27",
+            "vout": 0,
+            "amount": 5040000000,
+            "script_sig": "",
+            "witness": [
+              "8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f",
+              "1e8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f87"
+            ]
+          },
+          {
+            "txid": "fbd48a867f3d832c9ea8141f12ae6e34ea22dac7b82ac9d646db220e9102b4f0",
+            "vout": 1,
+            "amount": 10000000,
+            "script_sig": "",
+            "witness": [
+              "8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f",
+              "1e8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f87"
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "amount": 5049976982,
+            "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+          },
+          {
+            "amount": 0,
+            "script_pubkey": "6a4dfa01545341525f47524146317c7b226576656e74223a225041594f5554222c226172745f6964223a2267726166383635376262633264383562633833363066333165323532613135336261666632393039633536363161643131333834636166656639306433633366222c2265706f6368223a302c22726563697069656e7473223a5b7b2261646472223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c22616d6f756e74223a353034393937363938327d5d2c2270726f6f665f6f6666736574223a323335353230302c2270726f6f665f6c656e677468223a3130323430302c2270726f6f665f68617368223a2262356266363666393435343764306466396463333661636463613535343733326632306335366534343538313832653839633034623961366261306261323962222c2270726f6f665f73656564223a2232646365653164616166623661313062626366376166383765646233333939653637353333383961366130393762633632303533353234653732346664636432222c2270726f6f665f686569676874223a382c2270726f6f665f65706f6368223a302c2270726f6f665f73746f726572223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037227d"
+          }
+        ],
+        "locktime": 0,
+        "txid": "0575fbbeeb4042654fb0d4b9830c999900dc8adc19a1405d59cffc0a1066a7fd",
+        "fee": 23018,
+        "is_coinbase": false
+      }
+    ]
+  }
+  ```
+  </details>
+
+- ***Graffiti Proof-of-Retention Log:***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+  {
+    "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f": [
+      {
+        "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+        "epoch": 0,
+        "offset": 2355200,
+        "length": 102400,
+        "hash": "b5bf66f94547d0df9dc36acdca554732f20c56e4458182e89c04b9a6ba0ba29b",
+        "height": 8,
+        "seed": "2dcee1daafb6a10bbcf7af87edb3399e6753389a6a097bc62053524e724fdcd2",
+        "ts": 1787993125
+      }
+    ]
+  }
+  ```
+  </details>
+
+- ***Graffiti Payout History:***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+  {
+    "graf8657bbc2d85bc8360f31e252a153baff2909c5661ad11384cafef90d3c3f": [
+      {
+        "txid": "0575fbbeeb4042654fb0d4b9830c999900dc8adc19a1405d59cffc0a1066a7fd",
+        "block_height": 14,
+        "recipients": {
+          "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07": 5049976982
+        },
+        "amount": 5049976982,
+        "epoch": 0
+      }
+    ]
+  }
+  ```
+  </details>
+
+---
+
+#### 3. 🌐 Example of Network State Data Structure
 State is the database for overall network consensus statistics, supply emissions, and snapshot metrics.
-- ***State Data Structure (`state.json` / LMDB `state` subdb):***
+- ***State Data Structure:***
   > Storage Engine: Stored as structured snapshot under key `k:snapshot` alongside atomic keys `k:total_blocks` and `k:total_supply`.
   <details>
     <summary>See Preview</summary>
@@ -701,82 +841,83 @@ State is the database for overall network consensus statistics, supply emissions
   ```json
   {
     "k:snapshot": {
-      "chain": {
-        "avg_block_time_sec_window": 166.05,
-        "est_network_hashrate_hps_window": 14,
-        "genesis_hash": "00118ebfac2f0cbde5b21f1a53568fbf9f35e5ea1dce95ee502ba05e6f4adea0",
-        "genesis_message": "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)",
-        "max_bits": 530579455,
-        "median_time_past": 1764672601,
-        "target_block_time_sec": 37,
-        "tip_bits": 521845313,
-        "tip_chainwork": 109900,
-        "tip_difficulty": 2452,
-        "tip_hash": "0001ddd2caf5065dde3c16022ce70311de291552c634f1341e507c3307f27ffa",
-        "tip_height": 31,
-        "tip_target_hex": "0x1aba4100000000000000000000000000000000000000000000000000000000",
-        "tip_timestamp": 1764672801,
-        "total_block_size_bytes": 37101,
-        "total_blocks": 32
-      },
-      "graffiti": {
-        "comments": 1,
-        "graffiti_on_mempool": 0,
-        "payouts": 1,
-        "pool_balances": 29993000,
-        "posts": 1,
-        "total_graffiti_storage": 80358
-      },
+      "schema_version": 1,
+      "last_updated": "2026-08-29T16:53:54.568866+07:00",
+      "total_blocks": 17,
+      "total_supply": 250400000000000,
       "identity": {
-        "address_prefix": "tsar",
         "network_id": "gulag-net",
+        "address_prefix": "tsar",
         "network_magic_hex": "54534152434841494e",
         "pow_algo": "randomx"
       },
-      "last_updated": "2025-12-02T17:54:28.275075+07:00",
-      "miners_snapshot": {
-        "top_miners": [
-          [
-            "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-            32
-          ]
-        ]
+      "chain": {
+        "total_blocks": 17,
+        "tip_height": 16,
+        "genesis_hash": "0008e6acb33e675bcc3d51865376686ab936df1f5d9af9f1f4f97bf53d7c35e7",
+        "genesis_message": "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)",
+        "tip_hash": "00095ffbbd2f2a668194befded1adc1fd2397a801fe21892bb450940e6bd7df1",
+        "tip_timestamp": 1787993179,
+        "tip_bits": 521007324,
+        "tip_target_hex": "0xdf0dc00000000000000000000000000000000000000000000000000000000",
+        "tip_difficulty": 4701,
+        "tip_chainwork": 71549,
+        "median_time_past": 1787992953,
+        "max_bits": 530579455,
+        "target_block_time_sec": 37,
+        "total_block_size_bytes": 11640,
+        "avg_block_time_sec_window": 34.625,
+        "est_network_hashrate_hps_window": 135
       },
-      "schema_version": 1,
       "supply": {
-        "blocks_to_halving": 234968,
-        "circulating_estimate": 250125000000000,
+        "max_supply": 25250000000000000,
+        "emitted_subsidy": 250400000000000,
+        "circulating_estimate": 250349999978920,
+        "immature_coinbase": 50000021080,
+        "utxo_total_value": 250400000000000,
         "coinbase_maturity": 3,
         "current_block_subsidy": 25000000000,
         "current_epoch": 0,
-        "emitted_subsidy": 250775000000000,
-        "immature_coinbase": 25000000000,
-        "max_supply": 25250000000000000,
         "next_halving_height": 235000,
-        "utxo_total_value": 250150000000000
+        "blocks_to_halving": 234983
       },
-      "total_blocks": 32,
-      "total_supply": 250775000000000,
       "transactions": {
-        "mempool_bytes_estimate": 0,
-        "mempool_max_bytes": 1048576,
-        "mempool_txs": 0,
-        "mempool_vbytes_estimate": 0,
-        "total_fees_paid": 18573,
-        "total_non_coinbase_txs": 5,
-        "total_txs": 37
+        "total_txs": 26,
+        "total_non_coinbase_txs": 9,
+        "total_fees_paid": 100130,
+        "mempool_txs": 2,
+        "mempool_vbytes_estimate": 1250,
+        "mempool_bytes_estimate": 1250,
+        "mempool_max_bytes": 2097152
       },
       "utxo": {
-        "utxo_set_size": 13
+        "utxo_set_size": 16
+      },
+      "graffiti": {
+        "posts": 2,
+        "comments": 1,
+        "graffiti_on_mempool": 0,
+        "payouts": 2,
+        "pool_balances": 0,
+        "total_graffiti_storage": 70868531
+      },
+      "miners_snapshot": {
+        "top_miners": [
+          [
+            "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+            17
+          ]
+        ]
       }
     },
-    "k:total_blocks": 32,
-    "k:total_supply": 250775000000000
+    "k:total_blocks": 17,
+    "k:total_supply": 250400000000000
   }
   ```
   </details>
+
 > ℹ️ All data structures above represent the streaming and fixed LMDB storage models in the monorepo.
-The production storage model in this project is `.mdb` LMDB.
+The Storage model in this project is `.mdb` LMDB.
 
 
 ---

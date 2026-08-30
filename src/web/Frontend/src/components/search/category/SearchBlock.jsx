@@ -158,6 +158,16 @@ const ResultBlock = ({ data, onSearchClick, onBlockClick }) => {
             <span className="metric-value">{fmtChainwork(data?.chainwork ?? "-")}</span>
           </div>
         </div>
+
+        <div className="metric-card">
+          <div className="metric-icon-wrap fee">
+            <FaCoins />
+          </div>
+          <div className="metric-info">
+            <span className="metric-label">Total Fee</span>
+            <span className="metric-value">{fmtTsar(data?.total_fee)}</span>
+          </div>
+        </div>
       </div>
 
       {/* MERKLE ROOT BANNER */}

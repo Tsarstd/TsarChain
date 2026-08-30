@@ -497,11 +497,56 @@ const FormattedMarkdownContent = ({ content }) => {
                 );
               }
 
-              // Quote
+              // Quote or Callout Card
               if (trimmed.startsWith("> ")) {
+                const innerText = trimmed.replace(/^>\s*/gm, "").trim();
+                const lines = innerText.split("\n").map((l) => l.trim()).filter(Boolean);
+                const hasList = lines.some((l) => l.startsWith("- ") || l.startsWith("* ") || /^\d+\.\s/.test(l));
+
+                if (hasList) {
+                  const headerLines = [];
+                  const listItems = [];
+                  let isParsingList = false;
+
+                  for (const line of lines) {
+                    if (line.startsWith("- ") || line.startsWith("* ")) {
+                      isParsingList = true;
+                      listItems.push({ type: "bullet", text: line.replace(/^[-*]\s+/, "") });
+                    } else if (/^\d+\.\s/.test(line)) {
+                      isParsingList = true;
+                      listItems.push({ type: "ordered", text: line.replace(/^\d+\.\s+/, "") });
+                    } else if (!isParsingList) {
+                      headerLines.push(line);
+                    } else {
+                      listItems.push({ type: "bullet", text: line });
+                    }
+                  }
+
+                  return (
+                    <div key={para.id} className="doc-quote-card">
+                      {headerLines.length > 0 && (
+                        <div className="doc-quote-card-header">
+                          {headerLines.map((hl, hlIdx) => (
+                            <div key={`hl-${hlIdx}`} className="doc-quote-card-title">
+                              {formatInlineMarkdown(hl)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <ul className="doc-quote-bullet-list">
+                        {listItems.map((item, itemIdx) => (
+                          <li key={`qi-${itemIdx}`}>
+                            {formatInlineMarkdown(item.text)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                }
+
                 return (
                   <blockquote key={para.id} className="doc-quote">
-                    {formatInlineMarkdown(trimmed.replace(/^>\s*/gm, ""))}
+                    {formatInlineMarkdown(innerText)}
                   </blockquote>
                 );
               }

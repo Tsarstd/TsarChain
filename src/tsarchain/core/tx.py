@@ -7,8 +7,8 @@ import struct
 from ecdsa import SECP256k1, SigningKey
 
 # ---------------- Local Project ----------------
-from ..utils.helpers import Script
 from ..utils.helpers import (
+    Script,
     SIGHASH_ALL,
     bip143_sig_hash,
     to_bytes,
@@ -22,25 +22,12 @@ from ..utils.helpers import (
     wtxid_from_compact,
     serialize_tx,
     script_to_address,
+    extract_script_bytes,
 )
-
-# ---------------- Logger ----------------
-from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.core(tx)")
 
 _TX_HEADER_STRUCT = "<II?H"
 _TXIN_STRUCT = "<32sIQHH"
 _COINBASE_EXTRA_STRUCT = "<BHHq"
-
-
-def _extract_script_bytes(script) -> bytes:
-    if script is None:
-        return b""
-    if type(script) in (bytes, bytearray):
-        return bytes(script)
-    if type(script) is str:
-        return bytes.fromhex(script)
-    return script.serialize()
 
 
 class Tx:
@@ -59,10 +46,7 @@ class Tx:
         self.locktime = int(locktime)
         self.txid = txid
         self.is_coinbase = bool(is_coinbase)
-        if self.is_coinbase:
-            self.fee = 0
-        else:
-            self.fee = None
+        self.fee = 0 if self.is_coinbase else None
         self._cached_txid_bytes = None
         self._cached_raw_tx_nowit = None
         self._cached_raw_tx_w = None
@@ -77,20 +61,33 @@ class Tx:
 
         if auto_compute_txid:
             self.compute_txid()
-            
+
     # -------- Fee helpers ----------
+
+    def calculate_fee(self) -> int:
+        if self.is_coinbase:
+            self.fee = 0
+            return 0
+        if self.fee is not None:
+            return self.fee
+        if self.inputs and self.outputs:
+            total_in = sum(int(vin.amount or 0) for vin in self.inputs)
+            total_out = sum(int(vout.amount or 0) for vout in self.outputs)
+            if total_in >= total_out and total_in > 0:
+                self.fee = total_in - total_out
+                return self.fee
+        return 0
 
     def set_fee_from_input_amounts(self, input_amounts: list[int]) -> int:
         if self.is_coinbase:
             self.fee = 0
             return 0
 
-        for i, a in enumerate(input_amounts):
-            if i < len(self.inputs):
-                self.inputs[i].amount = int(a)
+        for vin, amt in zip(self.inputs, input_amounts):
+            vin.amount = int(amt)
 
         total_in = sum(int(a) for a in input_amounts)
-        total_out = sum(int(out.amount or 0) for out in self.outputs)
+        total_out = sum(out.amount for out in self.outputs)
         fee = total_in - total_out
         if fee < 0:
             raise ValueError("Output is greater than input, negative costs")
@@ -101,43 +98,31 @@ class Tx:
     # -------- Signing ----------
 
     def sign_input(self, index: int, priv_key_hex: str, prev_output, amount: int) -> bool:
-        try:
-            spk = prev_output.script_pubkey
-        except AttributeError:
-            spk = prev_output
-        script_pubkey_bytes = _extract_script_bytes(spk)
-
-        if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
+        script_pubkey_bytes = extract_script_bytes(prev_output)
+        if script_pubkey_bytes is None:
+            raise TypeError("Unsupported prev_output format")
+        if not is_p2wpkh(script_pubkey_bytes):
             raise ValueError("Not a P2WPKH")
+
         pubkey_hash = script_pubkey_bytes[2:22]
-        
-        # scriptCode tanpa prefix varint; panjang akan ditambahkan di fungsi sighash
         script_code = b"\x76\xa9\x14" + pubkey_hash + b"\x88\xac"
         z = bip143_sig_hash(self, index, script_code, int(amount), SIGHASH_ALL)
         der = sign_digest_der_low_s_native(priv_key_hex, z)
         sig = der + bytes([SIGHASH_ALL])
         sk = SigningKey.from_string(bytes.fromhex(priv_key_hex), curve=SECP256k1)
-        vk = sk.get_verifying_key()
-        pubkey_bytes = vk.to_string("compressed")
+        pubkey_bytes = sk.get_verifying_key().to_string("compressed")
         self.inputs[index].witness = [sig, pubkey_bytes]
         return True
-    
+
     def sigops_count(self, utxo_lookup=None) -> int:
         if self.is_coinbase:
             return 0
 
         total = 0
         for vin in self.inputs:
-            add = 1
-            prev_spk = None
-
-            if utxo_lookup is not None:
-                prev_spk = utxo_lookup(vin.txid, vin.vout)
-                if type(prev_spk) is str:
-                    prev_spk = bytes.fromhex(prev_spk)
-
-            script_sig = to_bytes(vin.script_sig.serialize())
-            wstack = [ to_bytes(w) for w in (vin.witness or []) ]
+            prev_spk = extract_script_bytes(utxo_lookup(vin.txid, vin.vout)) if utxo_lookup else None
+            script_sig = to_bytes(vin.script_sig.serialize()) if vin.script_sig else b""
+            wstack = [to_bytes(w) for w in (vin.witness or [])]
 
             if prev_spk is not None:
                 if is_p2wpkh(prev_spk):
@@ -148,19 +133,13 @@ class Tx:
                 else:
                     add = count_sigops_in_script(prev_spk) or 1
             else:
-                # Tanpa UTXO: coba tebak dari redeem/witnessScript
                 rs = last_pushdata(script_sig)
-                if rs:
-                    add = max(1, count_sigops_in_script(rs))
-                elif wstack:
-                    ws = wstack[-1]
-                    add = max(1, count_sigops_in_script(ws))
-                else:
-                    add = 1
+                ws = wstack[-1] if wstack else b""
+                target = rs or ws
+                add = max(1, count_sigops_in_script(target)) if target else 1
 
-            total += int(add)
-        return int(total)
-
+            total += add
+        return total
 
     # -------- IDs ----------
 
@@ -179,20 +158,23 @@ class Tx:
         return serialize_tx(self, include_witness=include_witness)
 
     def to_dict(self, include_txid: bool = True) -> dict:
-        return {
+        d = {
             "version": self.version,
             "inputs": [txin.to_dict() for txin in self.inputs],
             "outputs": [txout.to_dict() for txout in self.outputs],
             "locktime": self.locktime,
-            "txid": self.txid.hex() if (include_txid and type(self.txid) in (bytes, bytearray)) else None,
-            "fee": self.fee,
-            "is_coinbase": self.is_coinbase,}
+            "txid": self.txid.hex() if (include_txid and self.txid) else None,
+        }
+        if not self.is_coinbase:
+            d["fee"] = self.fee if self.fee is not None else self.calculate_fee()
+        d["is_coinbase"] = self.is_coinbase
+        return d
 
     @classmethod
     def from_dict(cls, data: dict):
-        if type(data) is cls or type(data) is Tx:
-            return data
         if type(data) is not dict:
+            if type(data) in (cls, Tx):
+                return data
             raise TypeError("from_dict expects dict or Tx")
 
         txid = bytes.fromhex(data["txid"]) if data.get("txid") else None
@@ -205,8 +187,11 @@ class Tx:
             locktime=data.get("locktime", 0),
             txid=txid,
             is_coinbase=bool(data.get("is_coinbase", False)),
-            auto_compute_txid=False,)
-        obj.fee = data.get("fee", None if not obj.is_coinbase else 0)
+            auto_compute_txid=False,
+        )
+        obj.fee = data.get("fee", 0 if obj.is_coinbase else None)
+        if obj.fee is None and not obj.is_coinbase:
+            obj.calculate_fee()
         if obj.txid is None:
             obj.compute_txid()
         return obj
@@ -214,24 +199,24 @@ class Tx:
     def to_storage_bytes(self) -> bytes:
         parts = [struct.pack(_TX_HEADER_STRUCT, self.version, self.locktime, self.is_coinbase, len(self.inputs))]
         for txin in self.inputs:
-            prev_b = txin.txid if type(txin.txid) in (bytes, bytearray) else bytes.fromhex(txin.txid)
-            ss_bytes = _extract_script_bytes(txin.script_sig)
+            prev_b = to_bytes(txin.txid)
+            ss_bytes = extract_script_bytes(txin.script_sig) or b""
             parts.append(struct.pack(_TXIN_STRUCT, prev_b, int(txin.vout), int(txin.amount or 0), len(ss_bytes), len(txin.witness)))
             if ss_bytes:
                 parts.append(ss_bytes)
             for w in txin.witness:
-                wb = bytes.fromhex(w) if type(w) is str else bytes(w)
+                wb = to_bytes(w)
                 parts.append(struct.pack("<H", len(wb)) + wb)
         
         parts.append(struct.pack("<H", len(self.outputs)))
         for txout in self.outputs:
             amt = int(txout.amount or 0)
-            spk_bytes = _extract_script_bytes(txout.script_pubkey)
+            spk_bytes = extract_script_bytes(txout.script_pubkey) or b""
             parts.append(struct.pack("<QH", amt, len(spk_bytes)) + spk_bytes)
             
         if self.is_coinbase:
             to_addr = (self.to_address or "").encode("utf-8")
-            blk_id = (str(self.block_id or "")).encode("utf-8")
+            blk_id = str(self.block_id or "").encode("utf-8")
             h = int(self.height or 0)
             parts.append(struct.pack(_COINBASE_EXTRA_STRUCT, len(to_addr), len(blk_id), 0, h))
             parts.append(to_addr)
@@ -257,9 +242,8 @@ class Tx:
             for _ in range(wit_count):
                 (w_len,) = struct.unpack_from("<H", raw, offset)
                 offset += 2
-                wb = raw[offset:offset + w_len]
+                witness.append(raw[offset:offset + w_len])
                 offset += w_len
-                witness.append(wb)
                 
             inputs.append(TxIn(txid=prev_txid, vout=vout, amount=amt, script_sig=script_sig, witness=witness))
             
@@ -282,7 +266,6 @@ class Tx:
             to_addr = raw[offset:offset + to_addr_len].decode("utf-8", errors="replace")
             offset += to_addr_len
             blk_id = raw[offset:offset + blk_id_len].decode("utf-8", errors="replace")
-            offset += blk_id_len
             obj = CoinbaseTx.__new__(CoinbaseTx)
             obj.version = version
             obj.locktime = locktime
@@ -298,8 +281,11 @@ class Tx:
             obj.compute_txid()
             return obj
             
-        tx = cls(version=version, locktime=locktime, is_coinbase=False, inputs=inputs, outputs=outputs)
-        return tx
+        obj = cls(version=version, locktime=locktime, is_coinbase=False, inputs=inputs, outputs=outputs)
+        total_in = sum(int(i.amount or 0) for i in inputs)
+        total_out = sum(int(o.amount or 0) for o in outputs)
+        obj.fee = max(0, total_in - total_out) if total_in >= total_out else 0
+        return obj
 
     # -------- Convenience props ----------
     
@@ -363,17 +349,14 @@ class TxIn:
         self.vout = int(val)
 
     def to_dict(self) -> dict:
-        ser_hex = self.script_sig.to_hex
-        if callable(ser_hex):
-            ss_hex = ser_hex()
-        else:
-            ss_hex = str(self.script_sig or "")
+        ss_hex = self.script_sig.to_hex() if self.script_sig else ""
         return {
             "txid": self.txid.hex(),
             "vout": self.vout,
             "amount": self.amount,
             "script_sig": ss_hex,
-            "witness": [w.hex() if type(w) in (bytes, bytearray) else str(w) for w in self.witness],}
+            "witness": [w.hex() if type(w) in (bytes, bytearray) else str(w) for w in self.witness],
+        }
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -382,14 +365,14 @@ class TxIn:
         raw = bytes.fromhex(data["script_sig"]) if data.get("script_sig") else b""
         script_sig = Script.parse(raw) if raw else Script([])
         witness = [bytes.fromhex(w) for w in data.get("witness", [])]
-        amount = int(data.get("amount", 0))
         return cls(
             txid=bytes.fromhex(data["txid"]),
             vout=int(data["vout"]),
-            amount=amount,
+            amount=int(data.get("amount", 0)),
             script_sig=script_sig,
-            witness=witness,)
-        
+            witness=witness,
+        )
+
     def __repr__(self):
         return f"<TxIn {self.txid.hex()}:{self.vout} amt={self.amount} wit={len(self.witness)}>"
 
@@ -413,13 +396,14 @@ class TxOut:
     def to_dict(self) -> dict:
         return {
             "amount": self.amount,
-            "script_pubkey": self.script_pubkey.serialize().hex(),}
+            "script_pubkey": self.script_pubkey.serialize().hex(),
+        }
 
     @classmethod
     def from_dict(cls, data: dict):
         if type(data) is not dict:
             raise TypeError("TxOut.from_dict expects dict")
-        
+
         spk = data.get("script_pubkey")
         if type(spk) is dict:
             script = Script.from_dict(spk)
@@ -427,8 +411,7 @@ class TxOut:
             script = Script.deserialize(bytes.fromhex(spk))
         else:
             raise TypeError("Unsupported script_pubkey format")
-        amount = int(data["amount"])
-        return cls(amount=amount, script_pubkey=script)
+        return cls(amount=int(data["amount"]), script_pubkey=script)
 
     def __repr__(self):
         return f"<TxOut amt={self.amount}>"

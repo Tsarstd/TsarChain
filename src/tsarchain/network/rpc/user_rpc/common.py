@@ -115,6 +115,7 @@ def summarize_block(self: "Network", b: Any) -> dict:
         "hash": self.bhash_hex(b),
         "block_id": block_id,
         "timestamp": ts,
+        "total_fee": int(b.total_fee or 0),
         "tx_count": tx_count,
         "graffiti_posts": graffiti_posts,
         "graffiti_comments": graffiti_comments,

@@ -35,13 +35,12 @@ class TxMempoolValidator:
     utxo: UTXODB
     last_error_reason: str | None
 
-
     @benchmark(label="validate_transaction_mempool", threshold_ms=15.0)
-    def validate_transaction(self, tx: Tx, utxo_set: dict[str, Any], spend_at_height: int | None = None,) -> bool:
+    def validate_transaction(self, tx: Tx, utxo_set: dict[str, Any], spend_at_height: int | None = None) -> bool:
         if not self._validate_tx_basic_guards(tx):
             return False
 
-        current_height = (spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state())
+        current_height = spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state()
         try:
             # ---- Special handling for Graffiti PAYOUT (P2WSH pool) ----
             payout_meta = self._find_payout_meta(tx)
@@ -51,84 +50,62 @@ class TxMempoolValidator:
             compact_tx = tx_to_compact_tuple(tx)
             utxo_items = self._utxo_snapshot_to_items(utxo_set)
             opts = {
-                "coinbase_maturity": int(CFG.COINBASE_MATURITY),
-                "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
-                "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
-                "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
-                "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
-                "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
-                "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
-                "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
-                "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
+                "coinbase_maturity": CFG.COINBASE_MATURITY,
+                "max_sigops_per_tx": CFG.MAX_SIGOPS_PER_TX,
+                "max_sigops_per_block": CFG.MAX_SIGOPS_PER_BLOCK,
+                "max_tx_vsize": CFG.MAX_TX_VSIZE,
+                "min_tx_vsize": CFG.MIN_TX_VSIZE,
+                "max_tx_weight": CFG.MAX_TX_WEIGHT,
+                "min_tx_weight": CFG.MIN_TX_WEIGHT,
+                "max_tx_inputs": CFG.MAX_TX_INPUTS,
+                "max_tx_outputs": CFG.MAX_TX_OUTPUTS,
                 "enforce_low_s": True,
             }
             ok, reason, fee = native_validate_tx_p2wpkh_compact(
                 compact_tx,
                 utxo_items,
-                int(current_height if spend_at_height is None else spend_at_height),
+                int(current_height),
                 opts,
             )
-            if ok:
-                tx.fee = int(fee or 0)
-                # Graffiti queue limit: only enforced when inserting into mempool (spend_at_height None).
-                enforce_limit = spend_at_height is None
-                if enforce_limit:
-                    if not self._enforce_mempool_post_limit(tx):
-                        return False
-                                    
-                    # Payout sanity check (soft, mirrors consensus)
-                    if not self._check_mempool_payout_sanity(tx):
-                        return False
-                        
-                return True
-            
-            else:
+            if not ok:
                 self.last_error_reason = reason or "native_mempool_reject"
-                tx_txid = tx.txid
                 log.warning(
                     "[validate_transaction] Native reject txid=%s reason=%s",
-                    tx_txid,
+                    tx.txid,
                     self.last_error_reason,
                 )
+                return False
+
+            tx.fee = int(fee or 0)
+            if spend_at_height is None:
+                if not self._enforce_mempool_post_limit(tx) or not self._check_mempool_payout_sanity(tx):
+                    return False
+
+            return True
         except Exception:
-            tx_txid = tx.txid
-            log.exception("[validate_transaction] Native validation error for tx %s", tx_txid)
+            log.exception("[validate_transaction] Native validation error for tx %s", tx.txid)
             self.last_error_reason = "native_mempool_failed"
             return False
-
 
 # =============================================================================
 # INTERNAL METHOD
 # =============================================================================
 
-
     def _script_to_address(self, script) -> str | None:
-        """
-        Convert P2WPKH/P2WSH scriptPubKey to bech32 address.
-        """
+        """Convert P2WPKH/P2WSH scriptPubKey to bech32 address."""
         return script_to_address(script)
 
-
     def _check_mempool_payout_sanity(self, tx: Tx) -> bool:
-        reg = self.utxo._graffiti_registry
-        if reg is None:
-            reg = GraffitiRegistry()
+        reg = self.utxo._graffiti_registry or GraffitiRegistry()
         paymap: dict[str, int] = {}
-        outputs = tx.outputs or []
-        for out in outputs:
-            spk = out.script_pubkey
-            addr = self._script_to_address(spk)
-            if not addr:
-                continue
-            
+        for out in tx.outputs or []:
+            addr = self._script_to_address(out.script_pubkey)
             amt = int(out.amount or 0)
-            if amt <= 0:
-                continue
-            
-            paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
-        
-        return self._validate_payout_sanity(tx, paymap, reg)
+            if addr and amt > 0:
+                addr_clean = addr.strip().lower()
+                paymap[addr_clean] = paymap.get(addr_clean, 0) + amt
 
+        return self._validate_payout_sanity(tx, paymap, reg)
 
     def _validate_payout_art_and_epoch(self, payout_meta: dict[str, Any], reg: GraffitiRegistry) -> bool:
         art_id = str(payout_meta.get("art_id") or "").strip().lower()
@@ -137,15 +114,15 @@ class TxMempoolValidator:
             self.last_error_reason = "payout_unknown_art"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
-        
+
         stats = post.get("stats") or {}
         last_epoch = int(stats.get("last_paid_epoch", -1))
         epoch = int(payout_meta.get("epoch", -1))
-        if epoch >= 0 and epoch <= last_epoch:
+        if 0 <= epoch <= last_epoch:
             self.last_error_reason = "payout_epoch_rewind"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
-        
+
         if epoch >= 0:
             latest_proof = reg.get_latest_proof_epoch(art_id)
             if latest_proof < epoch:
@@ -154,32 +131,36 @@ class TxMempoolValidator:
                     proof_height = int(payout_meta.get("proof_height", payout_meta.get("height", -1)))
                     if proof_height >= 0:
                         proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
-                        
+
                 if proof_epoch < epoch:
                     self.last_error_reason = "payout_missing_proof"
-                    log.warning("[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s", art_id[:16], self.last_error_reason, latest_proof, epoch)
+                    log.warning(
+                        "[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s",
+                        art_id[:16],
+                        self.last_error_reason,
+                        latest_proof,
+                        epoch,
+                    )
                     return False
         return True
-
 
     def _validate_payout_recipients_and_balance(self, tx: Tx, payout_meta: dict[str, Any], post: dict[str, Any]) -> bool:
         art_id = str(payout_meta.get("art_id") or "").strip().lower()
         stats = post.get("stats") or {}
         pool_balance = int(stats.get("pool_balance", 0))
 
-        recs = payout_meta.get("recipients") or []
-        if type(recs) is not list or not recs:
+        recs = payout_meta.get("recipients")
+        if not recs or type(recs) is not list:
             self.last_error_reason = "payout_no_recipients"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
 
         paymap: dict[str, int] = {}
-        outputs = tx.outputs or []
-        for out in outputs:
+        for out in tx.outputs or []:
             amt = int(out.amount or 0)
             if amt <= 0:
                 continue
-            
+
             spk = out.script_pubkey
             spk_bytes = get_utxo_script_bytes({"tx_out": {"script_pubkey": spk}})
             if is_p2wpkh(spk_bytes) or is_p2wsh(spk_bytes):
@@ -195,106 +176,98 @@ class TxMempoolValidator:
                 self.last_error_reason = "payout_bad_recipient"
                 log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
                 return False
-            
+
             total_req += amt_req
             if paymap.get(addr, 0) < amt_req:
                 self.last_error_reason = "payout_shortfall"
-                log.warning("[mempool] payout reject art=%s reason=%s paid=%s req=%s", art_id[:16], self.last_error_reason, paymap.get(addr, 0), amt_req)
+                log.warning(
+                    "[mempool] payout reject art=%s reason=%s paid=%s req=%s",
+                    art_id[:16],
+                    self.last_error_reason,
+                    paymap.get(addr, 0),
+                    amt_req,
+                )
                 return False
-            
+
         if total_req > pool_balance:
             self.last_error_reason = "payout_exceeds_pool"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
         return True
 
-
     def _validate_payout_inputs(self, tx: Tx, art_id: str, utxo_set: dict[str, Any]) -> bool:
         total_in = 0
         pool_script_hash = GRAFFITI.hash_pool_redeem_script(art_id)
-        inputs = tx.inputs or []
-        for txin in inputs:
+        for txin in tx.inputs or []:
             prev_txid_hex = self._txin_prev_txid(txin)
-            v_val = txin.vout
-            vout = int(v_val if v_val is not None else 0)
+            vout = int(txin.vout or 0)
             utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, vout)
             if not utxo_entry:
                 self.last_error_reason = "missing_prevout"
                 log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
                 return False
-            
+
             spk_bytes = get_utxo_script_bytes(utxo_entry)
-            amt_prev = self._get_utxo_amount(utxo_entry)
-            total_in += int(amt_prev)
+            total_in += self._get_utxo_amount(utxo_entry)
             if not (is_p2wsh(spk_bytes) and len(spk_bytes) == 34):
                 self.last_error_reason = "payout_prev_not_pool"
                 log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
                 return False
-            
-            prog = spk_bytes[2:]
-            if prog.hex() != pool_script_hash:
+
+            if spk_bytes[2:].hex() != pool_script_hash:
                 self.last_error_reason = "payout_wrong_pool"
                 log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
                 return False
 
-        outputs = tx.outputs or []
-        total_out = 0
-        for o in outputs:
-            total_out += int(o.amount or 0)
+        total_out = sum(int(o.amount or 0) for o in (tx.outputs or []))
         if total_out > total_in:
             self.last_error_reason = "payout_fee_negative"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
-        
+
         tx.fee = int(total_in - total_out)
         return True
 
-
     def _has_exceeded_mempool_post_limit(self, max_limit: int) -> bool:
         current_posts = 0
-        pool_values = self._pool.values()
-        for existing in pool_values:
-            outputs = existing.outputs or []
-            for out in outputs:
-                spk2 = out.script_pubkey
-                meta2 = GRAFFITI.parse_from_script(spk2) if spk2 is not None else None
-                if meta2 and str(meta2.get("event", "")).upper() == "POST":
-                    current_posts += 1
-                    if current_posts >= max_limit:
-                        return True
+        for existing in self._pool.values():
+            for out in existing.outputs or []:
+                if out.script_pubkey is not None:
+                    meta = GRAFFITI.parse_from_script(out.script_pubkey)
+                    if meta and str(meta.get("event", "")).upper() == "POST":
+                        current_posts += 1
+                        if current_posts >= max_limit:
+                            return True
         return False
-
 
     def _validate_single_payout_sanity(self, meta: dict[str, Any], paymap: dict[str, int], reg: GraffitiRegistry) -> bool:
         art_id = str(meta.get("art_id") or "").strip().lower()
         if not art_id:
             self.last_error_reason = "payout_bad_art_id"
             return False
-        
+
         post = reg.get_post(art_id)
         if not post:
             self.last_error_reason = "payout_unknown_art"
             return False
-        
+
         stats = post.get("stats") or {}
         pool_balance = int(stats.get("pool_balance", 0))
         last_epoch = int(stats.get("last_paid_epoch", -1))
         epoch = int(meta.get("epoch", -1))
-        if epoch >= 0 and epoch <= last_epoch:
+        if 0 <= epoch <= last_epoch:
             self.last_error_reason = "payout_epoch_rewind"
             return False
-        
-        if epoch >= 0:
-            latest_proof = reg.get_latest_proof_epoch(art_id)
-            if latest_proof < epoch:
-                self.last_error_reason = "payout_missing_proof"
-                return False
-            
-        recs = meta.get("recipients") or []
-        if type(recs) is not list or not recs:
+
+        if epoch >= 0 and reg.get_latest_proof_epoch(art_id) < epoch:
+            self.last_error_reason = "payout_missing_proof"
+            return False
+
+        recs = meta.get("recipients")
+        if not recs or type(recs) is not list:
             self.last_error_reason = "payout_no_recipients"
             return False
-        
+
         total_req = 0
         for rec in recs:
             addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
@@ -302,93 +275,83 @@ class TxMempoolValidator:
             if not addr or amt_req <= 0:
                 self.last_error_reason = "payout_bad_recipient"
                 return False
-            
+
             total_req += amt_req
-            paid = paymap.get(addr, 0)
-            if paid < amt_req:
+            if paymap.get(addr, 0) < amt_req:
                 self.last_error_reason = "payout_shortfall"
                 return False
-            
+
         if total_req > pool_balance:
             self.last_error_reason = "payout_exceeds_pool"
             return False
         return True
 
-
     def _validate_tx_basic_guards(self, tx: Tx) -> bool:
         if tx.is_coinbase:
             return False
 
-        tx_txid = tx.txid
         try:
             weight, vsize, _base_size, _total_size = compute_tx_weight_vsize(tx)
         except Exception:
-            log.exception("[validate_transaction] weight_calc_failed txid=%s", tx_txid)
+            log.exception("[validate_transaction] weight_calc_failed txid=%s", tx.txid)
             self.last_error_reason = "tx_weight_calc_failed"
             return False
 
         inputs = tx.inputs or []
         outputs = tx.outputs or []
-        vin = len(inputs)
-        vout = len(outputs)
-        if vsize > int(CFG.MAX_TX_VSIZE):
+        if vsize > CFG.MAX_TX_VSIZE:
             self.last_error_reason = "tx_vsize_exceeds_limit"
             return False
-        if vsize < int(CFG.MIN_TX_VSIZE):
+        if vsize < CFG.MIN_TX_VSIZE:
             self.last_error_reason = "tx_vsize_below_min"
             return False
-        if weight > int(CFG.MAX_TX_WEIGHT):
+        if weight > CFG.MAX_TX_WEIGHT:
             self.last_error_reason = "tx_weight_exceeds_limit"
             return False
-        if weight < int(CFG.MIN_TX_WEIGHT):
+        if weight < CFG.MIN_TX_WEIGHT:
             self.last_error_reason = "tx_weight_below_min"
             return False
-        if vin > int(CFG.MAX_TX_INPUTS):
+        if len(inputs) > CFG.MAX_TX_INPUTS:
             self.last_error_reason = "tx_inputs_exceed_limit"
             return False
-        if vout > int(CFG.MAX_TX_OUTPUTS):
+        if len(outputs) > CFG.MAX_TX_OUTPUTS:
             self.last_error_reason = "tx_outputs_exceed_limit"
             return False
 
         for tx_out in outputs:
-            spk = tx_out.script_pubkey
-            if not self._validate_graffiti_output(spk):
+            if not self._validate_graffiti_output(tx_out.script_pubkey):
                 return False
         return True
 
-
     def _find_payout_meta(self, tx: Tx) -> dict[str, Any] | None:
-        outputs = tx.outputs or []
-        for tx_out in outputs:
+        for tx_out in tx.outputs or []:
             spk = tx_out.script_pubkey
-            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-            if meta and str(meta.get("event", "")).upper() == "PAYOUT":
-                return meta
+            if spk is not None:
+                meta = GRAFFITI.parse_from_script(spk)
+                if meta and str(meta.get("event", "")).upper() == "PAYOUT":
+                    return meta
         return None
 
-
     def _validate_payout_tx(self, tx: Tx, payout_meta: dict[str, Any], utxo_set: dict[str, Any]) -> bool:
-        reg = self.utxo._graffiti_registry
-        if reg is None:
-            reg = GraffitiRegistry()
+        reg = self.utxo._graffiti_registry or GraffitiRegistry()
         if not self._validate_payout_art_and_epoch(payout_meta, reg):
             return False
 
         art_id = str(payout_meta.get("art_id") or "").strip().lower()
         post = reg.get_post(art_id)
-        
         if not self._validate_payout_recipients_and_balance(tx, payout_meta, post):
             return False
 
         return self._validate_payout_inputs(tx, art_id, utxo_set)
-
 
     def _enforce_mempool_post_limit(self, tx: Tx) -> bool:
         is_post = False
         outputs = tx.outputs or []
         for tx_out in outputs:
             spk = tx_out.script_pubkey
-            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+            if spk is None:
+                continue
+            meta = GRAFFITI.parse_from_script(spk)
             if meta and str(meta.get("event", "")).upper() == "POST":
                 is_post = True
                 art_id = str(meta.get("art_id") or "").strip().lower()
@@ -399,100 +362,82 @@ class TxMempoolValidator:
                 if art_id:
                     try:
                         pool_addr = GRAFFITI.derive_pool_address(art_id)
-                        min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
-                        paid = 0
-                        for out in outputs:
-                            if out.address == pool_addr:
-                                paid += int(out.amount or 0)
+                        min_fee = GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0))
+                        paid = sum(int(out.amount or 0) for out in outputs if out.address == pool_addr)
                         if paid < min_fee:
                             self.last_error_reason = "graffiti_post_fee_insufficient"
-                            log.warning("[_enforce_mempool_post_limit] POST rejected due to insufficient pool fee: paid=%s required=%s art_id=%s", paid, min_fee, art_id[:16])
+                            log.warning(
+                                "[_enforce_mempool_post_limit] POST rejected due to insufficient pool fee: paid=%s required=%s art_id=%s",
+                                paid,
+                                min_fee,
+                                art_id[:16],
+                            )
                             return False
                     except Exception:
                         pass
                 break
-            
-        if is_post and int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
-            if self._has_exceeded_mempool_post_limit(int(CFG.MAX_GRAFFITI_ON_MEMPOOL)):
+
+        if is_post and CFG.MAX_GRAFFITI_ON_MEMPOOL > 0:
+            if self._has_exceeded_mempool_post_limit(CFG.MAX_GRAFFITI_ON_MEMPOOL):
                 self.last_error_reason = "mempool_graffiti_full"
                 return False
         return True
 
-
     def _validate_payout_sanity(self, tx: Tx, paymap: dict[str, int], reg: GraffitiRegistry) -> bool:
-        outputs = tx.outputs or []
-        for out in outputs:
+        for out in tx.outputs or []:
             spk = out.script_pubkey
-            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-            if meta and str(meta.get("event", "")).upper() == "PAYOUT":
-                if not self._validate_single_payout_sanity(meta, paymap, reg):
-                    return False
+            if spk is not None:
+                meta = GRAFFITI.parse_from_script(spk)
+                if meta and str(meta.get("event", "")).upper() == "PAYOUT":
+                    if not self._validate_single_payout_sanity(meta, paymap, reg):
+                        return False
         return True
 
-
     def _lookup_in_snapshot_dict(self, snapshot: dict, txid: str, txid_raw: str, idx: int):
-        key_lower = f"{txid}:{idx}"
-        key_raw = f"{txid_raw}:{idx}"
-        for k in (key_lower, key_raw):
+        for k in (f"{txid}:{idx}", f"{txid_raw}:{idx}", (txid, idx), (txid_raw, idx), f"{txid}:{idx}".encode("utf-8")):
             if k in snapshot:
                 return snapshot[k]
-        kb = key_lower.encode("utf-8")
-        if kb in snapshot:
-            return snapshot[kb]
-
-        for tk in ((txid, idx), (txid_raw, idx)):
-            if tk in snapshot:
-                return snapshot[tk]
 
         bucket = snapshot.get(txid) or snapshot.get(txid_raw)
-        if type(bucket) is dict and idx in bucket:
-            return bucket[idx]
+        if type(bucket) is dict:
+            return bucket.get(idx)
 
-        txid_bytes = bytes.fromhex(txid)
-        if txid_bytes:
-            tuple_b = (txid_bytes, idx)
-            if tuple_b in snapshot:
-                return snapshot[tuple_b]
+        try:
+            txid_bytes = bytes.fromhex(txid)
+            if (txid_bytes, idx) in snapshot:
+                return snapshot[(txid_bytes, idx)]
+        except ValueError:
+            pass
         return None
 
-
-    def _get_utxo_amount(self, utxo_data):
+    def _get_utxo_amount(self, utxo_data) -> int:
         if type(utxo_data) is dict:
             if "tx_out" in utxo_data:
                 txo = utxo_data["tx_out"]
-                if type(txo) is dict and "amount" in txo:
-                    return int(txo.get("amount", 0))
-
-                amt = txo.amount
-                if amt is not None:
-                    return int(amt)
+                return int(txo.get("amount", 0)) if type(txo) is dict else int(txo.amount or 0)
             if "amount" in utxo_data:
                 return int(utxo_data["amount"])
         else:
-            amt = utxo_data.amount
-            if amt is not None:
-                return int(amt)
+            try:
+                amt = utxo_data.amount
+                if amt is not None:
+                    return int(amt)
+            except AttributeError:
+                pass
         raise ValueError(f"Unknown UTXO format: {utxo_data}")
 
-
     def _txin_prev_txid(self, tx_in) -> str | None:
-        txid_val = tx_in.txid
-
-        if txid_val is None:
-            txid_val = tx_in.prev_tx
-
+        txid_val = tx_in.txid if tx_in.txid is not None else tx_in.prev_tx
         if txid_val is None:
             return None
         if type(txid_val) in (bytes, bytearray):
             return txid_val.hex().lower()
         return str(txid_val).lower()
 
-
     def _lookup_utxo_entry(self, snapshot, prev_txid_hex: str, prev_index: int):
         if prev_txid_hex is None:
             return None
         idx = int(prev_index)
-
         txid_raw = str(prev_txid_hex)
         txid = txid_raw.lower()
 
@@ -506,16 +451,12 @@ class TxMempoolValidator:
             return lookup_method(txid, idx)
         return None
 
-
     def _utxo_snapshot_to_items(self, snapshot) -> list[tuple]:
-        items = []
         if type(snapshot) is not dict:
-            return items
+            return []
+        items = []
         for key, entry in snapshot.items():
-            if type(key) in (bytes, bytearray):
-                key_str = key.decode("utf-8")
-            else:
-                key_str = str(key)
+            key_str = key.decode("utf-8") if type(key) in (bytes, bytearray) else str(key)
             if ":" not in key_str:
                 continue
             txid_hex, vout_str = key_str.split(":", 1)
@@ -535,7 +476,7 @@ class TxMempoolValidator:
         data = last_pushdata(raw)
         if not data or not data.startswith(CFG.GRAFFITI_MAGIC):
             return True
-        if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
+        if len(data) > CFG.MAX_GRAFFITI_OPRET:
             self.last_error_reason = "graffiti_opreturn_too_large"
             return False
         meta = GRAFFITI.parse_payload(data)
@@ -548,7 +489,7 @@ class TxMempoolValidator:
             if size_val <= 0:
                 self.last_error_reason = "graffiti_size_invalid"
                 return False
-            if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+            if size_val > CFG.GRAFFITI_MAX_SIZE_BYTES:
                 self.last_error_reason = "graffiti_size_exceeds_limit"
                 return False
         elif event == "COMMENT":
@@ -556,15 +497,13 @@ class TxMempoolValidator:
             if comment_len <= 0:
                 self.last_error_reason = "graffiti_comment_empty"
                 return False
-            if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+            if comment_len > CFG.GRAFFITI_COMMENT_MAX_BYTES:
                 self.last_error_reason = "graffiti_comment_too_large"
                 return False
-            amount = int(meta.get("amount", 0))
-            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+            if int(meta.get("amount", 0)) < CFG.GRAFFITI_COMMENT_MIN_FEE:
                 self.last_error_reason = "graffiti_comment_fee_too_low"
                 return False
-            tip = int(meta.get("tip", 0))
-            if tip < 0:
+            if int(meta.get("tip", 0)) < 0:
                 self.last_error_reason = "graffiti_comment_tip_negative"
                 return False
         return True

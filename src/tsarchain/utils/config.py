@@ -134,9 +134,18 @@ WEB_DATABASE_PATH      = "data/web"  # dedicated LMDB path for web cache
 WEB_MEDIA_CACHE_DIR    = "data/web/graffiti_cache"  # path for cached media files
 WEB_RECEIPTS_DIR       = "data/web/receipts"  # path for generated receipts
 WEB_HISTORY_BOOKS_DIR  = "data/web/history_books"  # path for generated history books
-WEB_EXPLORER_URL       = "http://localhost:5173/?search="  # base url for receipt & history QR codes
+WEB_EXPLORER_URL       = "http://localhost:7542/?search="  # base url for receipt & history QR codes
 LMDB_WEB_SIZE_INIT     = 10 * 1024 * 1024  # initial web LMDB size (10 MB)
 LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
+
+
+# ---- WEB SERVER & BACKEND ----
+WEB_SERVER_HOST     = "0.0.0.0"  # default host interface to bind web explorer API
+WEB_SERVER_PORT     = 4000  # default port for web explorer API
+WEB_NODE_HOST       = "127.0.0.1"  # default TsarChain node RPC host
+WEB_NODE_PORT       = 19000  # default TsarChain node RPC port
+WEB_ALLOWED_ORIGINS = "http://localhost:7542"
+
 
 
 # ---- SNAPSHOT MODES (FAST SYNC BOOTSTRAP) ----
@@ -764,4 +773,3 @@ else:
     LOG_ROTATE_MAX_BYTES        = 10_000_000  # rollover log files after ~10MB in prod
     LOG_BACKUP_COUNT            = 7  # keep more history on production nodes
     FILTER_REDAX                = True # true for prod
-

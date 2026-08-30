@@ -128,6 +128,9 @@ class BlockSearch:
             p._kv("Version", str(ver), mono=True, vtag="val_num")
         if mroot is not None:
             p._kv("Merkle Root", str(mroot), mono=True, vtag="val_hex")
+        tot_fee = _pick("total_fee")
+        if tot_fee is not None:
+            p._kv("Total Fee", self._fmt_tsar_amount(tot_fee), mono=True, vtag="val_num")
 
         # Graffiti / comments
         graff = b.get("graffiti")

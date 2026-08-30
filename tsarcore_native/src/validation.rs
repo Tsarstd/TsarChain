@@ -589,7 +589,7 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<AHashMap<PrevoutKey, Utx
 }
 
 fn verify_signature(
-    secp: &Secp256k1<secp256k1::VerifyOnly>,
+    _secp: &Secp256k1<secp256k1::VerifyOnly>,
     pubkey: &[u8],
     sig_der: &[u8],
     digest: &[u8; 32],
@@ -611,7 +611,7 @@ fn verify_signature(
         }
     }
     let msg = Message::from_digest(*digest);
-    secp.verify_ecdsa(msg, &norm, &pk).is_ok()
+    secp256k1::ecdsa::verify(&norm, msg, &pk).is_ok()
 }
 
 fn validate_transaction_parts(

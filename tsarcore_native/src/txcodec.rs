@@ -7,7 +7,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyList, PyTuple};
 use sha2::{Digest, Sha256};
-use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
+use secp256k1::{ecdsa::Signature, Message, PublicKey};
 use ripemd::Ripemd160;
 
 fn encode_varint(v: usize, out: &mut Vec<u8>) {
@@ -303,70 +303,6 @@ fn parse_validation_opts(opts: &Bound<'_, PyAny>) -> PyResult<TxLimits> {
     })
 }
 
-#[pyfunction]
-#[pyo3(signature = (tx_tuple, input_index, script_code, value_sat, sighash_type))]
-pub fn sighash_bip143_compact<'py>(
-    py: Python<'py>,
-    tx_tuple: Bound<'py, PyTuple>,
-    input_index: u32,
-    script_code: &[u8],
-    value_sat: u64,
-    sighash_type: u32,
-) -> PyResult<Bound<'py, PyBytes>> {
-    const SIGHASH_ALL: u32 = 0x01;
-    if (sighash_type & 0x1f) != SIGHASH_ALL || (sighash_type & 0x80) != 0 {
-        return Err(PyErr::new::<exceptions::PyNotImplementedError, _>(
-            "Only SIGHASH_ALL (no ANYONECANPAY) supported for compact",
-        ));
-    }
-    let (ver, lock, inputs, outputs) = parse_compact_tx(&tx_tuple)?;
-    let idx = input_index as usize;
-    if idx >= inputs.len() {
-        return Err(PyErr::new::<exceptions::PyValueError, _>(
-            "input_index out of range",
-        ));
-    }
-
-    let mut prevouts_cat = Vec::with_capacity(inputs.len() * 36);
-    let mut seq_cat = Vec::with_capacity(inputs.len() * 4);
-    for (prev, vout, seq, _ss, _) in &inputs {
-        let mut prev_le = prev.clone();
-        prev_le.reverse();
-        prevouts_cat.extend_from_slice(&prev_le);
-        prevouts_cat.extend_from_slice(&vout.to_le_bytes());
-        seq_cat.extend_from_slice(&seq.to_le_bytes());
-    }
-    let hash_prevouts = sha256d(&prevouts_cat);
-    let hash_sequence = sha256d(&seq_cat);
-
-    let mut outs_cat = Vec::new();
-    for (amt, spk) in &outputs {
-        outs_cat.extend_from_slice(&amt.to_le_bytes());
-        encode_varint(spk.len(), &mut outs_cat);
-        outs_cat.extend_from_slice(spk);
-    }
-    let hash_outputs = sha256d(&outs_cat);
-
-    let (prev_txid, vout, seq, _ss, _wit) = &inputs[idx];
-    let mut preimage = Vec::with_capacity(156 + script_code.len());
-    preimage.extend_from_slice(&ver.to_le_bytes());
-    preimage.extend_from_slice(&hash_prevouts);
-    preimage.extend_from_slice(&hash_sequence);
-    let mut prev_le = prev_txid.clone();
-    prev_le.reverse();
-    preimage.extend_from_slice(&prev_le);
-    preimage.extend_from_slice(&vout.to_le_bytes());
-    encode_varint(script_code.len(), &mut preimage);
-    preimage.extend_from_slice(script_code);
-    preimage.extend_from_slice(&value_sat.to_le_bytes());
-    preimage.extend_from_slice(&seq.to_le_bytes());
-    preimage.extend_from_slice(&hash_outputs);
-    preimage.extend_from_slice(&lock.to_le_bytes());
-    preimage.extend_from_slice(&sighash_type.to_le_bytes());
-
-    let digest = sha256d(&preimage);
-    Ok(PyBytes::new(py, &digest))
-}
 
 #[pyfunction]
 #[pyo3(signature = (tx_tuple, utxo_items, spend_height, opts))]
@@ -510,8 +446,6 @@ pub fn validate_tx_p2wpkh_compact<'py>(
     }
     let hash_outputs = sha256d(&outs_cat);
 
-    let secp = Secp256k1::verification_only();
-
     let mut seen: HashMap<(Vec<u8>, u32), ()> = HashMap::new();
     let mut input_sum: u128 = 0;
     let mut sigops: u32 = 0;
@@ -597,7 +531,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
                     return Ok((false, Some("high_s".to_string()), None));
                 }
             }
-            if secp.verify_ecdsa(msg, &norm, &pk).is_err() {
+            if secp256k1::ecdsa::verify(&norm, msg, &pk).is_err() {
                 return Ok((false, Some("ecdsa_verify_failed".to_string()), None));
             }
 

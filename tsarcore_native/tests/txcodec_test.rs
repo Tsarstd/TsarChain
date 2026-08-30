@@ -4,16 +4,18 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
-use secp256k1::{Secp256k1, Message, SecretKey};
+use secp256k1::{Message, SecretKey};
 use ripemd::Ripemd160;
 use sha2::{Sha256, Digest};
 use std::sync::Once;
-use tsarcore_native::txcodec::{
-    txid_from_compact,
-    wtxid_from_compact, 
-    serialize_tx_compact,
-    sighash_bip143_compact,
-    validate_tx_p2wpkh_compact
+use tsarcore_native::{
+    sighash_bip143,
+    txcodec::{
+        txid_from_compact,
+        wtxid_from_compact, 
+        serialize_tx_compact,
+        validate_tx_p2wpkh_compact,
+    }
 };
 
 static INIT: Once = Once::new();
@@ -110,9 +112,8 @@ fn test_txcodec_basic() {
 fn test_txcodec_validate_p2wpkh_success() {
     init_python();
     Python::attach(|py| {
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_byte_array([0xcd; 32]).unwrap();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let sk = SecretKey::from_secret_bytes([0xcd; 32]).unwrap();
+        let pk = secp256k1::PublicKey::from_secret_key(&sk);
         let pk_bytes = pk.serialize();
         
         let pubkey_hash = hash160_bytes(&pk_bytes);
@@ -169,11 +170,12 @@ fn test_txcodec_validate_p2wpkh_success() {
         script_code.extend_from_slice(&pubkey_hash);
         script_code.extend_from_slice(&[0x88, 0xac]);
 
-        let sighash = sighash_bip143_compact(py, tx_empty.clone(), 0, &script_code, 100000, 1).unwrap();
+        let tx_raw = serialize_tx_compact(py, tx_empty.clone(), true).unwrap();
+        let sighash = sighash_bip143(py, tx_raw.as_bytes(), 0, &script_code, 100000, 1).unwrap();
         let mut digest_arr = [0u8; 32];
         digest_arr.copy_from_slice(sighash.as_bytes());
         let msg = Message::from_digest(digest_arr);
-        let sig = secp.sign_ecdsa(msg, &sk);
+        let sig = secp256k1::ecdsa::sign(msg, &sk);
         let mut sig_der = sig.serialize_der().to_vec();
         sig_der.push(1); // SIGHASH_ALL
         
@@ -256,9 +258,8 @@ fn test_txcodec_validate_errors() {
 fn test_txcodec_validate_duplicate_prevout() {
     init_python();
     Python::attach(|py| {
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_byte_array([0xcd; 32]).unwrap();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let sk = SecretKey::from_secret_bytes([0xcd; 32]).unwrap();
+        let pk = secp256k1::PublicKey::from_secret_key(&sk);
         let pk_bytes = pk.serialize();
         
         let pubkey_hash = hash160_bytes(&pk_bytes);
@@ -317,11 +318,12 @@ fn test_txcodec_validate_duplicate_prevout() {
         tx_empty_list.append(false).unwrap();
         let tx_empty = to_tuple(py, &tx_empty_list);
 
-        let sighash = sighash_bip143_compact(py, tx_empty.clone(), 0, &script_code, 100000, 1).unwrap();
+        let tx_raw = serialize_tx_compact(py, tx_empty.clone(), true).unwrap();
+        let sighash = sighash_bip143(py, tx_raw.as_bytes(), 0, &script_code, 100000, 1).unwrap();
         let mut digest_arr = [0u8; 32];
         digest_arr.copy_from_slice(sighash.as_bytes());
         let msg = Message::from_digest(digest_arr);
-        let sig = secp.sign_ecdsa(msg, &sk);
+        let sig = secp256k1::ecdsa::sign(msg, &sk);
         let mut sig_der = sig.serialize_der().to_vec();
         sig_der.push(1); // SIGHASH_ALL
         
