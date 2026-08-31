@@ -126,15 +126,15 @@ class GossipHandler(BroadcastHandlerProxy):
             return True
 
         except TimeoutError:
-            log.info("[start_gossip] Connect to %s timed out", peer)
+            log.debug("[start_gossip] Connect to %s timed out", peer)
         except ConnectionRefusedError:
-            log.info("[start_gossip] Connect to %s refused", peer)
+            log.debug("[start_gossip] Connect to %s refused", peer)
         except OSError as e:
             try:
                 err_msg = e.strerror
             except AttributeError:
                 err_msg = e
-            log.warning("[start_gossip] OSError sending to %s: %s", peer, err_msg)
+            log.debug("[start_gossip] OSError sending to %s: %s", peer, err_msg)
 
         self._handle_send_failure(peer, entry, sock)
         return False  
@@ -209,7 +209,7 @@ class GossipHandler(BroadcastHandlerProxy):
         sock = entry.get("sock")
         if sock:
             sock.close()
-            log.info("[_cleanup_socket]")
+            log.debug("[_cleanup_socket]")
 
 
     def _handle_send_failure(self, peer: Tuple[str, int], entry: Optional[Dict[str, Any]], sock: Optional[socket.socket]):

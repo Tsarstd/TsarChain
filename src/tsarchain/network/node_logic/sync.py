@@ -103,7 +103,7 @@ def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
             return False
         candidates = [h for h in self._peer_best_height.values() if type(h) is int and h >= 0]
         if not candidates:
-            return False
+            return True
         best_remote = max(candidates)
     local_height = int(self.broadcast.blockchain.height)
     return (best_remote - local_height) <= slack
@@ -190,8 +190,16 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     headers = headers_resp.get("headers") or []
     if not headers:
         self._peer_last_sync[peer] = now
+        with self.lock:
+            local_height = int(self.broadcast.blockchain.height)
+            self._peer_best_height[peer] = max(self._peer_best_height.get(peer, -1), local_height)
         self.reward_peer(peer)
         return True
+
+    with self.lock:
+        max_h = max((int(h.get("height", -1)) for h in headers if type(h) is dict), default=-1)
+        if max_h >= 0:
+            self._peer_best_height[peer] = max(self._peer_best_height.get(peer, -1), max_h)
 
     missing = _determine_missing_blocks(self, headers)
     if not missing:

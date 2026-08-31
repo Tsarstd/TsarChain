@@ -153,7 +153,7 @@ WEB_ALLOWED_ORIGINS = "*"
 Set True on new/client nodes to download snapshot (.tar.gz) on startup.
 Set False on seed/VPS/genesis nodes.
 '''
-SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
+SNAPSHOT_BOOTSTRAP_ENABLED = True  # allow nodes to bootstrap via snapshot downloads
 
 
 # ---- SNAPSHOT REMOTE SOURCE & SIGNING ----
@@ -162,7 +162,7 @@ SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot down
 SNAPSHOT_MANIFEST_URL      = ""  # e.g. "http://seed1.tsarchain.org:8000/snapshot.manifest.json"
 
 # Direct URL to tsarchain.tar.gz archive (used if manifest URL is empty or specified directly)
-SNAPSHOT_FILE_URL          = "http://localhost:8000/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
+SNAPSHOT_FILE_URL          = "http://38.253.224.105:8121/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True (True in prod, False in test/dev)
 SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded secp256k1 pubkey used to verify snapshot signature
 
@@ -182,7 +182,7 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 Set True on VPS/seed nodes to automatically export & package sub-databases (chain, utxo, state, graffiti, mempool)
 into data/snapshot/tsarchain.tar.gz
 '''
-BACKUP_SNAPSHOT       = True  # True on VPS/Seed node to generate snapshot archives; False on client nodes
+BACKUP_SNAPSHOT       = False  # True on VPS/Seed node to generate snapshot archives; False on client nodes
 
 BLOCK_BACKUP_SNAPSHOT = 20  # Block interval to generate new snapshot archive (e.g. 50-100 for dev test, 1000 for prod)
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
@@ -373,7 +373,7 @@ STORAGE_PORT_RANGE_DEV  = (39200, 39209)
 STORAGE_PORT_RANGE_PROD = (41200, 41209)
 
 BOOTSTRAP_DEV = (
-    ("127.0.0.1", 38169),
+    ("38.253.224.105", 38169),
 ) # loopback bootstrap peers for development
 
 BOOTSTRAP_PROD = (
@@ -412,17 +412,17 @@ MAX_UTXO_ADDR_LEN              = 64  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
 
-HANDSHAKE_RL_PER_IP_BURST      = 20  # burst limit when rate-limiting handshakes
-HANDSHAKE_RL_PER_IP_WINDOW_S   = 30  # time window for handshake rate limit
-HANDSHAKE_RL_PER_NODE_BURST    = 80  # burst limit per node_id to avoid CGNAT false positives
+HANDSHAKE_RL_PER_IP_BURST      = 100  # burst limit when rate-limiting handshakes
+HANDSHAKE_RL_PER_IP_WINDOW_S   = 10   # time window for handshake rate limit
+HANDSHAKE_RL_PER_NODE_BURST    = 150  # burst limit per node_id to avoid CGNAT false positives
 
-HANDSHAKE_RL_PER_NODE_WINDOW_S = 10  # time window for per-node limiter
-HANDSHAKE_RL_SUBNET_BURST      = 100  # burst cap per /24
-HANDSHAKE_RL_SUBNET_WINDOW_S   = 20  # subnet limiter window (seconds)
+HANDSHAKE_RL_PER_NODE_WINDOW_S = 10   # time window for per-node limiter
+HANDSHAKE_RL_SUBNET_BURST      = 200  # burst cap per /24
+HANDSHAKE_RL_SUBNET_WINDOW_S   = 15   # subnet limiter window (seconds)
 
-CGNAT_IP_BURST_MULT            = 3  # multiplier to loosen per-IP limits when identity is present
-TEMP_BAN_SECONDS               = 300  # duration for temporary ban entries
-BAN_MALICIOUS_RPC              = 600  # temp ban duration when receiving unregistered RPC types
+CGNAT_IP_BURST_MULT            = 3    # multiplier to loosen per-IP limits when identity is present
+TEMP_BAN_SECONDS               = 30   # duration for temporary ban entries
+BAN_MALICIOUS_RPC              = 180  # temp ban duration when receiving unregistered RPC types
 
 POW_TOKEN_TTL_S                = 120  # default TTL for PoW challenge/cookie
 RPC_POW_DIFFICULTY_TX          = 16  # difficulty bits for TX submit / wallet-heavy RPC
@@ -558,27 +558,27 @@ WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
 
 
 # ---- PING LOOKUP THROTTLING ----
-PING_RL_IP_BURST    = 5 # ping requests allowed per IP before throttling
+PING_RL_IP_BURST    = 20 # ping requests allowed per IP before throttling
 PING_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
-PING_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
+PING_RL_BACKOFF_S   = 5  # seconds to backoff when the limiter trips
 
 
 # ---- GET PEERS LOOKUP THROTTLING ----
-GET_PEERS_RL_IP_BURST    = 5 # get_peers requests allowed per IP before throttling
+GET_PEERS_RL_IP_BURST    = 20 # get_peers requests allowed per IP before throttling
 GET_PEERS_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
-GET_PEERS_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
+GET_PEERS_RL_BACKOFF_S   = 5  # seconds to backoff when the limiter trips
 
 
 # ---- BALANCE LOOKUP THROTTLING ----
-BALANCE_RL_IP_BURST    = 15   # balance queries allowed per IP before throttling
-BALANCE_RL_IP_WINDOW_S = 4   # time window (seconds) evaluated by the limiter
-BALANCE_RL_BACKOFF_S   = 3   # seconds to backoff when the limiter trips
+BALANCE_RL_IP_BURST    = 25   # balance queries allowed per IP before throttling
+BALANCE_RL_IP_WINDOW_S = 4    # time window (seconds) evaluated by the limiter
+BALANCE_RL_BACKOFF_S   = 3    # seconds to backoff when the limiter trips
 
 
 # ---- INFO SNAPSHOT THROTTLING ----
-INFO_RL_IP_BURST    = 4   # GET_INFO / GET_NETWORK_INFO allowed per IP within window
+INFO_RL_IP_BURST    = 20  # GET_INFO / GET_NETWORK_INFO allowed per IP within window
 INFO_RL_IP_WINDOW_S = 8   # seconds evaluated by limiter
-INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
+INFO_RL_BACKOFF_S   = 3   # backoff applied when limit exceeded
 
 
 # ---- HISTORY / UTXO LOOKUP THROTTLING ----
@@ -755,14 +755,14 @@ DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/p
 # ---- MODE PROFILES ----
 if IS_DEV:
     # ---- DEV PROFILE ----
-    LOG_LEVEL                   = "TRACE"  # very verbose logging for development
+    LOG_LEVEL                   = "INFO"  # balanced verbosity for development
     LOG_FORMAT                  = "plain"  # plain text logs ease local debugging
     LOG_TO_CONSOLE              = False  # mirror logs to stdout for dev loops
     LOG_RATE_LIMIT_SECONDS      = 0.0  # disable console throttling in dev
     LOG_FILE_RATE_LIMIT_SECONDS = 0.0  # disable file throttling in dev
     LOG_ROTATE_MAX_BYTES        = 5_000_000  # rollover log files after ~5MB in dev
     LOG_BACKUP_COUNT            = 3  # retain a few rotated dev log files
-    FILTER_REDAX                = False # sensitive area, priv_key, .etc (debuging only)
+    FILTER_REDAX                = True # sanitize sensitive keys and secrets
 else:
     # ---- PROD PROFILE ----
     LOG_LEVEL                   = "INFO"  # balanced verbosity for production

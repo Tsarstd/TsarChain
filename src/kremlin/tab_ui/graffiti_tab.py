@@ -329,6 +329,7 @@ class GraffitiTab(ttk.Frame):
         self.comment_send_btn: ttk.Button | None = None
         self.payout_tree: ttk.Treeview | None = None
         self.payout_status_var = StringVar(value="Payout history pending.")
+        self._upload_start_time: float = 0.0
 
         self._build_style()
         self.configure()
@@ -876,6 +877,7 @@ class GraffitiTab(ttk.Frame):
         self._begin_upload()
 
     def _begin_upload(self) -> None:
+        self._upload_start_time = time.time()
         def progress(sent: int, total: int):
             self.after(0, lambda: self._update_progress(sent, total))
         def done(res: dict):
@@ -883,11 +885,35 @@ class GraffitiTab(ttk.Frame):
         
         self.controller.perform_upload_step(progress_cb=progress, done_cb=done)
 
+    @staticmethod
+    def _format_speed(bytes_per_sec: float) -> str:
+        if bytes_per_sec >= 1024 * 1024:
+            return f"{bytes_per_sec / (1024 * 1024):.2f} MB/s"
+        elif bytes_per_sec >= 1024:
+            return f"{bytes_per_sec / 1024:.1f} KB/s"
+        return f"{bytes_per_sec:.0f} B/s"
+
+    @staticmethod
+    def _format_size(num_bytes: int) -> str:
+        if num_bytes >= 1024 * 1024 * 1024:
+            return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+        elif num_bytes >= 1024 * 1024:
+            return f"{num_bytes / (1024 * 1024):.2f} MB"
+        elif num_bytes >= 1024:
+            return f"{num_bytes / 1024:.1f} KB"
+        return f"{num_bytes} B"
+
     def _update_progress(self, sent: int, total: int) -> None:
         total = max(total, 1)
         pct = min(100.0, (sent / total) * 100.0)
         self.pbar["value"] = pct
-        self.receipt_var.set(f"Uploading: {sent:,}/{total:,} bytes")
+        start_t = self._upload_start_time or time.time()
+        elapsed = max(0.05, time.time() - start_t)
+        speed = sent / elapsed
+        speed_str = self._format_speed(speed)
+        sent_str = self._format_size(sent)
+        total_str = self._format_size(total)
+        self.receipt_var.set(f"Uploading: {sent_str} / {total_str} ({pct:.1f}%) • {speed_str}")
 
     def _handle_upload_result(self, res: Optional[Dict[str, Any]], *, trigger_broadcast: bool = True, txid: Optional[str] = None) -> None:
         ok, res = self.controller.process_upload_result(res or {})
