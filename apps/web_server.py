@@ -18,7 +18,7 @@ Key flags
 --host          : Host interface to bind on (default: 0.0.0.0).
 --port          : Port to listen on (default: 4000).
 --node-host     : TsarChain node RPC host (default: 127.0.0.1).
---node-port     : TsarChain node RPC port (default: 19000).
+--node-port     : TsarChain node RPC port (default: 38169).
 """
 
 from __future__ import annotations
