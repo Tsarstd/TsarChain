@@ -134,7 +134,9 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
                 b["sig"] = sig_reg
                 b["spend_pub"] = spend_pk
             if opk_reg and len(opk_reg) == 64:
-                b.setdefault("opk_list", []).append(opk_reg)
+                lst = b.setdefault("opk_list", [])
+                if opk_reg not in lst and len(lst) < 10:
+                    lst.append(opk_reg)
             self.put_prekey_bundle(addr_s, b)
 
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": now_int, "hops": 0}
@@ -318,7 +320,9 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
         rec = self.get_prekey_bundle(addr_s)
         rec.update({"ik": ik, "spk": spk, "sig": sig, "spend_pub": sp, "ts": now_int})
         if type(opk) is str and len(opk) == 64:
-            rec.setdefault("opk_list", []).append(opk)
+            lst = rec.setdefault("opk_list", [])
+            if opk not in lst and len(lst) < 10:
+                lst.append(opk)
         self.put_prekey_bundle(addr_s, rec)
 
     return {"type":"CHAT_PUBLISH_PREKEYS"}
