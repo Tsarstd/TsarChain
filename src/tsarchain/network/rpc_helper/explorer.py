@@ -31,8 +31,8 @@ class ExplorerHandler(NetworkHandlerProxy):
         if tx is None:
             return {"error": "tx not found", "txid": txid_hex}
 
-        opmap = self.build_outpoint_map(chain)
         is_coinbase = self.is_coinbase_tx(tx)
+        opmap = {} if is_coinbase else self.build_outpoint_map(chain)
 
         vin, total_in = ([], 0) if is_coinbase else self._build_tx_inputs(tx, opmap)
         vout, total_out = self._build_tx_outputs(tx)
@@ -60,7 +60,7 @@ class ExplorerHandler(NetworkHandlerProxy):
         }
 
 
-    @benchmark(label="GET_BLOCK_HASH", threshold_ms=15.0)
+    @benchmark(label="GET_BLOCK_HASH", threshold_ms=5.0)
     def handle_get_block_hash(self, height: int) -> dict:
 
         cache = self._block_hash_cache
@@ -197,8 +197,12 @@ class ExplorerHandler(NetworkHandlerProxy):
         return vout, total_out
 
 
-    def _calculate_block_bonus(self, height: int, chain: list, opmap: dict) -> int | None:
-        block = next((b for b in chain if int(b.height or 0) == height), None)
+    def _calculate_block_bonus(self, height: int, chain: list, opmap: dict = None) -> int | None:
+        if 0 <= height < len(chain):
+            b = chain[height]
+            if int(b.height or 0) == height:
+                return int(b.total_fee or 0)
+        block = next((b for b in reversed(chain) if int(b.height or 0) == height), None)
         if not block:
             return None
         return int(block.total_fee or 0)

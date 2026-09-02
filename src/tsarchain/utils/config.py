@@ -755,7 +755,7 @@ DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/p
 # ---- MODE PROFILES ----
 if IS_DEV:
     # ---- DEV PROFILE ----
-    LOG_LEVEL                   = "INFO"  # balanced verbosity for development
+    LOG_LEVEL                   = "DEBUG"  # balanced verbosity for development
     LOG_FORMAT                  = "plain"  # plain text logs ease local debugging
     LOG_TO_CONSOLE              = False  # mirror logs to stdout for dev loops
     LOG_RATE_LIMIT_SECONDS      = 0.0  # disable console throttling in dev

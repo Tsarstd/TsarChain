@@ -22,6 +22,8 @@ class HistoryHandler(NetworkHandlerProxy):
         super().__init__(network)
         self._tx_history_cache = collections.OrderedDict()
         self._tx_history_cache_lock = threading.RLock()
+        self._chain_opmap_cache = {"tip_hash": "", "map": {}}
+        self._chain_opmap_lock = threading.RLock()
 
     def process_history_lookup(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
         addr, target_spk_hex, err_result = self._validate_history_params(address, limit, offset)
@@ -41,7 +43,7 @@ class HistoryHandler(NetworkHandlerProxy):
             return self._slice_items(cached_items, limit, offset, direction, status)
 
         with self.broadcast.lock:
-            chain = list(self.broadcast.blockchain.chain)
+            chain = self.broadcast.blockchain.chain
             tip_height = int(self.broadcast.blockchain.height)
             mem = self.broadcast.mempool.get_all_txs()
 
@@ -82,7 +84,7 @@ class HistoryHandler(NetworkHandlerProxy):
     def find_tx_and_meta(self, txid_hex: str):
         target = str(txid_hex or "").strip().lower()
         with self.broadcast.lock:
-            chain = list(self.broadcast.blockchain.chain)
+            chain = self.broadcast.blockchain.chain
             tip_height = int(self.broadcast.blockchain.height)
             mem = self.broadcast.mempool.get_all_txs()
         for tx in mem:
@@ -90,7 +92,7 @@ class HistoryHandler(NetworkHandlerProxy):
             txid = self._txid_hex_helper(txid_val)
             if txid == target:
                 return ("mempool", tx, None, 0, None, chain, mem, tip_height)
-        for b in chain:
+        for b in reversed(chain):
             h = int(b.height or 0)
             timestamp = int(b.timestamp or 0)
             txs = b.transactions or []
@@ -147,17 +149,30 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def build_outpoint_map(self, chain, mem=None):
-        chain_map: dict[str, tuple[int, str]] = {}
-        for b in chain:
-            txs = b.transactions or []
-            for tx in txs:
-                txid_val = tx.txid
-                txid = self._txid_hex_helper(txid_val)
-                outputs = tx.outputs or []
-                for idx, o in enumerate(outputs):
-                    amount = int(o.amount or 0)
-                    spk_hex = self._txout_to_spk_hex(o) or ""
-                    chain_map[f"{txid}:{idx}"] = (amount, spk_hex)
+        tip_hash = ""
+        if chain:
+            tip_hash = self.bhash_hex(chain[-1])
+
+        chain_map = None
+        if tip_hash and self._chain_opmap_cache.get("tip_hash") == tip_hash:
+            chain_map = self._chain_opmap_cache.get("map")
+
+        if chain_map is None:
+            chain_map = {}
+            for b in chain:
+                txs = b.transactions or []
+                for tx in txs:
+                    txid_val = tx.txid
+                    txid = self._txid_hex_helper(txid_val)
+                    outputs = tx.outputs or []
+                    for idx, o in enumerate(outputs):
+                        amount = int(o.amount or 0)
+                        spk_hex = self._txout_to_spk_hex(o) or ""
+                        chain_map[f"{txid}:{idx}"] = (amount, spk_hex)
+            if tip_hash:
+                with self._chain_opmap_lock:
+                    self._chain_opmap_cache = {"tip_hash": tip_hash, "map": chain_map}
+
         if mem is None:
             return chain_map
         mem_map: dict[str, tuple[int, str]] = {}

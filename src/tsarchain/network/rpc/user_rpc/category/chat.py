@@ -147,7 +147,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         return {"error": str(exc)}
 
 
-@benchmark(label="CHAT_LOOKUP_PUB", threshold_ms=15.0)
+@benchmark(label="CHAT_LOOKUP_PUB", threshold_ms=10.0)
 def chat_lookup_pub(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     addr_s = (message.get("address") or "").strip().lower()
@@ -198,7 +198,7 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
 
-@benchmark(label="CHAT_PRESENCE", threshold_ms=15.0)
+@benchmark(label="CHAT_PRESENCE", threshold_ms=10.0)
 def chat_presence(self, message, pow_obj, base_identity, addr, *,
                   client_ip, **kwargs):
     addr_s = (message.get("address") or "").strip().lower()
@@ -328,7 +328,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     return {"type":"CHAT_PUBLISH_PREKEYS"}
 
 
-@benchmark(label="CHAT_GET_PREKEY", threshold_ms=15.0)
+@benchmark(label="CHAT_GET_PREKEY", threshold_ms=10.0)
 def chat_get_prekey(self, message, *,
                     client_ip, is_miner_sender, **kwargs):
     addr_s = (message.get("address") or "").strip().lower()
@@ -537,7 +537,7 @@ def chat_read(self, message, pow_obj, base_identity, *,
     return {"type": "CHAT_READ_OK"}
 
 
-@benchmark(label="CHAT_PULL", threshold_ms=15.0)
+@benchmark(label="CHAT_PULL", threshold_ms=10.0)
 def chat_pull(self, message, *,
               client_ip, **kwargs):
     me = (message.get("address") or "").strip().lower()

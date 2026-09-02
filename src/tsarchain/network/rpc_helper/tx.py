@@ -22,9 +22,6 @@ class TxHandler(NetworkHandlerProxy):
             raise ValueError("from/to address must be string")
 
         amt_sat = int(amount * CFG.TSAR) if type(amount) is float else int(amount)
-        # Ensure latest UTXO view from disk before building
-        self.broadcast.utxodb._load()
-        
         utxos_map = self.broadcast.utxodb.get(from_addr) or {}
         tip_height = self.broadcast.blockchain.height
         utxos_list = self._build_utxos_list(utxos_map, tip_height)
@@ -68,8 +65,6 @@ class TxHandler(NetworkHandlerProxy):
             raise ValueError("outputs must be non-empty list")
 
         fee_rate = int(max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB)))
-        self.broadcast.utxodb._load()
-        
         utxos_map = self.broadcast.utxodb.get(from_addr) or {}
         utxos_list = self._build_utxos_list(utxos_map, self.broadcast.blockchain.height)
         
