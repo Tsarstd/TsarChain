@@ -186,8 +186,6 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
         return False
     
     start_height = min(tip_height, last_stored + blocks_to_fetch)
-    log.info("[webdb] Prefetching %d blocks up to height %d (current stored: %d, tip: %d)", 
-             blocks_to_fetch, start_height, last_stored, tip_height)
     
     has_more = tip_height > start_height
     
@@ -217,9 +215,6 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
         
         if new_items:
             save_blocks_to_storage(new_items)
-            log.info("[webdb] Prefetched %d new blocks (height %d to %d)", 
-                    len(new_items), new_items[-1].get("height", 0), 
-                    new_items[0].get("height", 0))
             
             highest_new = max(item.get("height", 0) for item in new_items)
             set_prefetch_last_height(max(highest_new, start_height))

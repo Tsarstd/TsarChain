@@ -65,6 +65,22 @@ def get_peers(self, message, pow_obj, base_identity, addr, mtype, *,
 @benchmark(label="STOR_LIST", threshold_ms=5.0)
 def stor_list(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
+    """
+    Returns active Archivist storage nodes registered on this node.
+
+    Used by wallets (desktop & mobile) to discover available storage nodes
+    for uploading and downloading decentralized Graffiti media payloads.
+
+    Co-located Node & Archivist Resolution:
+    When an Archivist instance runs on the same server (VPS) as the full node,
+    it connects internally via loopback (127.0.0.1) for zero latency and immunity
+    from rate-limiting or anti-DoS temp-bans.
+    However, if an external client (e.g. user wallet on home Wi-Fi) queries STOR_LIST,
+    returning '127.0.0.1' would cause the wallet to attempt connecting to its own localhost.
+    Therefore, loopback storer IPs are dynamically translated to CFG.NODE_PUBLIC_IP
+    when served to external clients, while local services (such as the web backend)
+    continue receiving '127.0.0.1'.
+    """
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:stor_list",
@@ -101,10 +117,14 @@ def stor_list(self, message, pow_obj, base_identity, *,
 
     items = []
     for meta in by_key.values():
+        storer_ip = meta.get("ip", "")
+        if storer_ip in ("127.0.0.1", "::1", "localhost") and client_ip not in ("127.0.0.1", "::1", "localhost") and CFG.NODE_PUBLIC_IP:
+            storer_ip = CFG.NODE_PUBLIC_IP
+
         item = {
             "addr": meta.get("addr", ""),
             "url": meta.get("url", ""),
-            "ip": meta.get("ip", ""),
+            "ip": storer_ip,
             "port": int(meta.get("port", 0)),
             "last_seen": int(meta.get("last_seen", 0)),
             "alive": bool(meta.get("alive", False)),

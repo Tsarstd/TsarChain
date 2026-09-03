@@ -73,7 +73,7 @@ ARCHIVIST_OUTPUT_DIR = "data/archivist/storage/json_output"
 WEB_OUTPUT_DIR = "data/web/json_output"
 
 INDENT = 2                        # 'None' for smaller size but less readable.
-SORT_UTXO = True
+SORT_UTXO = False
 
 # Registry of databases operating on Pure Binary storage
 BINARY_STORAGE_REGISTRY = {
