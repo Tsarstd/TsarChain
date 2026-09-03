@@ -17,12 +17,17 @@ import json
 import lmdb
 import base64
 import struct
+import argparse
 
 reconfig = getattr(sys.stdout, 'reconfigure', None)
 if callable(reconfig):
     reconfig(encoding='utf-8', errors='replace')
 
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
 from typing import Any, Dict, List, Union, Optional, Tuple
 
 # Add src to sys.path for native models
@@ -249,8 +254,12 @@ def open_lmdb_env_dbi(env_path: str, db_name: Optional[str] = None) -> Tuple[Opt
 # EXPORT MODULES
 # ============================================================
 
-def export_keys_data() -> int:
+def export_keys_data(target_dbs: Optional[set] = None) -> int:
     """Exports key sub-databases (node_secrets, secure_wallet, wallet_peer_keys, stor_peer_keys) from data/keys to data/keys/json_output/."""
+    subdbs_to_export = [s for s in KEYS_SUBDBS if not target_dbs or s.lower() in target_dbs]
+    if not subdbs_to_export:
+        return 0
+
     print("\n🔑 --- Exporting Keys Data ---")
     os.makedirs(KEYS_OUTPUT_DIR, exist_ok=True)
 
@@ -260,7 +269,7 @@ def export_keys_data() -> int:
         return 0
 
     total_entries = 0
-    for subdb in KEYS_SUBDBS:
+    for subdb in subdbs_to_export:
         env, dbi = open_lmdb_env_dbi(env_path, subdb)
         if not env or dbi is None:
             continue
@@ -295,13 +304,17 @@ def sort_utxo_items(items):
     return others
 
 
-def export_node_data() -> int:
+def export_node_data(target_dbs: Optional[set] = None) -> int:
     """Exports Node sub-databases (chain, state, utxo, mempool, graffiti) to data/node/json_output/."""
+    subdbs_to_export = [s for s in NODE_SUBDBS if not target_dbs or s.lower() in target_dbs]
+    if not subdbs_to_export:
+        return 0
+
     print("\n📦 --- Exporting Node Data ---")
     os.makedirs(NODE_OUTPUT_DIR, exist_ok=True)
     total_entries = 0
 
-    for db_name in NODE_SUBDBS:
+    for db_name in subdbs_to_export:
         dedicated_path = NODE_SUBDB_PATHS.get(db_name)
         env_path = dedicated_path if (dedicated_path and os.path.exists(dedicated_path)) else LEGACY_NODE_PATH
         if not os.path.exists(env_path):
@@ -317,7 +330,7 @@ def export_node_data() -> int:
         badge = " [BINARY ENGINE]" if is_binary else " [JSON/KV]"
         print(f"📁 Reading '{db_name}'{badge} from: {env_path}")
 
-        # ---------- GRAFFITI (Granular Binary / Legacy Parser) ----------
+        # ---------- GRAFFITI (Granular Binary Engine) ----------
         if db_name == 'graffiti':
             posts = {}
             comments = {}
@@ -372,7 +385,7 @@ def export_node_data() -> int:
         env.close()
 
     # POST-PROCESS: SORT UTXO (if enabled)
-    if SORT_UTXO:
+    if SORT_UTXO and (not target_dbs or 'utxo' in target_dbs):
         utxo_file = os.path.join(NODE_OUTPUT_DIR, "utxo.json")
         if os.path.exists(utxo_file):
             print("\n🔄 Post-processing UTXO: sorting by block_height...")
@@ -397,16 +410,25 @@ def export_node_data() -> int:
     return total_entries
 
 
-def export_archivist_data() -> int:
+def export_archivist_data(target_dbs: Optional[set] = None) -> int:
     """Exports Archivist sub-databases (index_db, payout_guard) to data/archivist/storage/json_output/."""
-    print("\n📚 --- Exporting Archivist Storage Data ---")
-    os.makedirs(ARCHIVIST_OUTPUT_DIR, exist_ok=True)
-    total_entries = 0
-
     targets = [
         ("index_db", "data/archivist/storage/index_db", "idx", "index.json"),
         ("payout_guard", "data/archivist/storage/payout_guard", "guard", "payout_guard.json"),
     ]
+
+    if target_dbs:
+        targets = [
+            t for t in targets
+            if t[0].lower() in target_dbs or t[2].lower() in target_dbs or os.path.splitext(t[3])[0].lower() in target_dbs
+        ]
+
+    if not targets:
+        return 0
+
+    print("\n📚 --- Exporting Archivist Storage Data ---")
+    os.makedirs(ARCHIVIST_OUTPUT_DIR, exist_ok=True)
+    total_entries = 0
 
     for label, env_path, db_name, out_filename in targets:
         if not os.path.exists(env_path):
@@ -431,8 +453,14 @@ def export_archivist_data() -> int:
     return total_entries
 
 
-def export_web_data() -> int:
+def export_web_data(target_dbs: Optional[set] = None) -> int:
     """Exports Web LMDB data (web_cache, web_media, web_blocks) to data/web/json_output/."""
+    web_subdbs = ['web_cache', 'web_media', 'web_blocks']
+    if target_dbs:
+        web_subdbs = [s for s in web_subdbs if s.lower() in target_dbs or 'web' in target_dbs]
+        if not web_subdbs and 'web' not in target_dbs:
+            return 0
+
     print("\n🌐 --- Exporting Web Data ---")
     os.makedirs(WEB_OUTPUT_DIR, exist_ok=True)
 
@@ -441,7 +469,6 @@ def export_web_data() -> int:
         print(f"⚠️  Web LMDB environment directory not found at '{env_path}', skipping...")
         return 0
 
-    web_subdbs = ['web_cache', 'web_media', 'web_blocks']
     total_entries = 0
 
     try:
@@ -464,7 +491,7 @@ def export_web_data() -> int:
         except lmdb.Error:
             continue
 
-    if not found_any:
+    if not found_any and (not target_dbs or 'web' in target_dbs):
         try:
             dbi = env.open_db(None, create=False)
             output_file = os.path.join(WEB_OUTPUT_DIR, "web.json")
@@ -486,32 +513,125 @@ def export_web_data() -> int:
 # MAIN ORCHESTRATION
 # ============================================================
 
-def export_lmdb():
+def export_lmdb(target_dbs: Optional[set] = None, domain: str = 'all'):
     print("=" * 72)
     print("🚀 TSARCHAIN MULTI-DOMAIN LMDB EXPORTER & SMART BINARY DECODER")
     print("=" * 72)
+    if target_dbs:
+        print(f"🎯 Target Databases Filter : {', '.join(sorted(target_dbs))}")
+    if domain != 'all':
+        print(f"🌐 Target Domain Filter    : {domain}")
     print("🛡️  ACTIVE BINARY STORAGE ENGINE REGISTER:")
     for db_name, info in BINARY_STORAGE_REGISTRY.items():
+        if target_dbs and db_name not in target_dbs and domain not in ('all', 'node'):
+            continue
         print(f"   ⚡ [{db_name.upper():<8}] Model   : {info['model']}")
         print(f"                 Benefit : {info['benefit']}")
     print("=" * 72)
 
-    keys_count = export_keys_data()
-    node_count = export_node_data()
-    archivist_count = export_archivist_data()
-    web_count = export_web_data()
+    keys_count = 0
+    node_count = 0
+    archivist_count = 0
+    web_count = 0
+
+    if domain in ('all', 'keys'):
+        keys_count = export_keys_data(target_dbs=target_dbs)
+    if domain in ('all', 'node'):
+        node_count = export_node_data(target_dbs=target_dbs)
+    if domain in ('all', 'archivist'):
+        archivist_count = export_archivist_data(target_dbs=target_dbs)
+    if domain in ('all', 'web'):
+        web_count = export_web_data(target_dbs=target_dbs)
 
     total = keys_count + node_count + archivist_count + web_count
     print("\n" + "=" * 72)
     print("🔒 ALL LMDB EXPORTS & BINARY DECODING COMPLETED SUCCESSFULLY.")
     print("📊 SUMMARY OF EXPORTED ENTRIES:")
-    print(f"   - Keys (secrets/wallets) : {keys_count}")
-    print(f"   - Node (chain,utxo,etc)  : {node_count}")
-    print(f"   - Archivist (storage)    : {archivist_count}")
-    print(f"   - Web (explorer cache)   : {web_count}")
+    if domain in ('all', 'keys'):
+        print(f"   - Keys (secrets/wallets) : {keys_count}")
+    if domain in ('all', 'node'):
+        print(f"   - Node (chain,utxo,etc)  : {node_count}")
+    if domain in ('all', 'archivist'):
+        print(f"   - Archivist (storage)    : {archivist_count}")
+    if domain in ('all', 'web'):
+        print(f"   - Web (explorer cache)   : {web_count}")
     print(f"   - Total Decoded Entries  : {total}")
     print("=" * 72)
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Export LMDB sub-databases to JSON with full streaming and binary decoding.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Contoh Penggunaan:
+  python tools/lmdb_to_json.py                      # Ekspor semua database
+  python tools/lmdb_to_json.py state                # Hanya ekspor database 'state'
+  python tools/lmdb_to_json.py state utxo           # Ekspor 'state' dan 'utxo'
+  python tools/lmdb_to_json.py --db state           # Menggunakan flag --db
+  python tools/lmdb_to_json.py --domain node        # Hanya domain 'node'
+  python tools/lmdb_to_json.py --list               # Lihat daftar database yang tersedia
+"""
+    )
+    parser.add_argument(
+        'databases',
+        nargs='*',
+        help="Nama database spesifik yang ingin diekstrak (contoh: state utxo mempool)"
+    )
+    parser.add_argument(
+        '--db', '-d',
+        nargs='+',
+        dest='db_flag',
+        help="Nama database spesifik (alternatif flag: --db state utxo)"
+    )
+    parser.add_argument(
+        '--domain',
+        choices=['all', 'node', 'keys', 'archivist', 'web'],
+        default='all',
+        help="Filter berdasarkan domain tertentu (default: all)"
+    )
+    parser.add_argument(
+        '--list', '-l',
+        action='store_true',
+        help="Tampilkan daftar semua nama database dan domain yang tersedia"
+    )
+
+    args = parser.parse_args()
+
+    if args.list:
+        print("=" * 60)
+        print("📋 DAFTAR SUB-DATABASE & DOMAIN YANG TERSEDIA")
+        print("=" * 60)
+        print("  Domain 'node':      ", ", ".join(NODE_SUBDBS))
+        print("  Domain 'keys':      ", ", ".join(KEYS_SUBDBS))
+        print("  Domain 'archivist': ", "index_db, payout_guard")
+        print("  Domain 'web':       ", "web_cache, web_media, web_blocks")
+        print("=" * 60)
+        return
+
+    raw_dbs = list(args.databases or []) + list(args.db_flag or [])
+    selected_dbs = set()
+    for item in raw_dbs:
+        for part in item.split(','):
+            part = part.strip().lower()
+            if part:
+                selected_dbs.add(part)
+
+    known_dbs = (
+        {s.lower() for s in KEYS_SUBDBS} |
+        {s.lower() for s in NODE_SUBDBS} |
+        {'index_db', 'idx', 'index', 'payout_guard', 'guard'} |
+        {'web_cache', 'web_media', 'web_blocks', 'web'}
+    )
+
+    if selected_dbs:
+        unknown = selected_dbs - known_dbs
+        if unknown:
+            print(f"⚠️  Peringatan: Database berikut mungkin tidak dikenal: {', '.join(unknown)}")
+            print(f"ℹ️  Jalankan 'python tools/lmdb_to_json.py --list' untuk melihat daftar nama yang valid.\n")
+
+    target_dbs = selected_dbs if selected_dbs else None
+    export_lmdb(target_dbs=target_dbs, domain=args.domain)
+
+
 if __name__ == '__main__':
-    export_lmdb()
+    main()
