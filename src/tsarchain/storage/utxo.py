@@ -32,6 +32,9 @@ class UTXODB(
         self._meta: dict = {}
         self._address_index: dict[str, set[str]] | None = None
         self._key_to_spk: dict[str, str] = {}
+        self._key_to_amount: dict[str, int] = {}
+        self._addr_total_balance: dict[str, int] = {}
+        self._coinbases_by_height: dict[int, dict] = {}
         self._tip_cache = {"height": 0, "ts": 0.0}
         self._tip_cache_ttl = float(CFG.STATE_HEIGHT_CACHE_TTL)
         self._load()

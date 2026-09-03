@@ -191,7 +191,6 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
     if utxo is None:
         return {"error": "utxo_unavailable"}
     
-    utxo._load()
     try:
         reg = utxo._graffiti_registry
     except AttributeError:

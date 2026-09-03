@@ -22,27 +22,30 @@ class UTXOBalanceMixin:
 
         target_spk_hex = self._normalize_target_spk_hex(identifier)
 
-        total = mature = immature = 0
         with self._lock:
-            keys = list(self._get_index_bucket(target_spk_hex))
-            for key in keys:
-                entry = self.utxos.get(key)
-                if not entry:
-                    continue
-                tx_out = entry["tx_out"]
-                amt = self._amount_from_tx_out(tx_out)
-                is_cb = bool(entry.get("is_coinbase", False))
-                born = int(entry.get("block_height", entry.get("height", 0)))
+            self._ensure_index_locked()
+            total = self._addr_total_balance.get(target_spk_hex, 0)
+            if not total:
+                if mode == "total":
+                    return 0
+                if mode == "spendable":
+                    return 0
+                return {"total": 0, "mature": 0, "immature": 0}
 
-                if is_cb:
-                    confirmations = max(0, (int(current_height) - born) + 1)
-                    if confirmations >= int(maturity):
-                        mature += amt
-                    else:
-                        immature += amt
-                else:
-                    mature += amt
-                total += amt
+            immature = 0
+            if self._coinbases_by_height:
+                maturity_int = int(maturity)
+                curr_h = int(current_height) if current_height is not None else 0
+                # Immature coinbases satisfy: (curr_h - born + 1) < maturity_int <=> born >= curr_h + 2 - maturity_int
+                min_immature_born = max(0, curr_h + 2 - maturity_int)
+                for h in range(min_immature_born, curr_h + 1):
+                    entries = self._coinbases_by_height.get(h)
+                    if entries:
+                        for spk, amt in entries.values():
+                            if spk == target_spk_hex:
+                                immature += amt
+
+            mature = max(0, total - immature)
 
         if mode == "total":
             return int(total)
@@ -54,13 +57,11 @@ class UTXOBalanceMixin:
     def count_utxos(self, identifier: str) -> int:
         target_spk_hex = self._normalize_target_spk_hex(identifier)
         with self._lock:
-            keys = list(self._get_index_bucket(target_spk_hex))
-            valid_count = 0
-            for key in keys:
-                if key in self.utxos:
-                    valid_count += 1
-            
-            return valid_count
+            self._ensure_index_locked()
+            bucket = self._address_index.get(target_spk_hex) if self._address_index else None
+            if not bucket:
+                return 0
+            return sum(1 for k in bucket if k in self.utxos)
 
 
     def get(self, identifier: str):
@@ -156,14 +157,24 @@ class UTXOBalanceMixin:
         
         self._address_index = defaultdict(set)
         self._key_to_spk.clear()
+        self._key_to_amount = {}
+        self._addr_total_balance = defaultdict(int)
+        self._coinbases_by_height = defaultdict(dict)
         for key, entry in self.utxos.items():
             if entry is None:
                 continue
             tx_out = entry.get("tx_out")
             spk_hex = self._script_hex_from_tx_out(tx_out)
             if spk_hex:
+                amt = self._amount_from_tx_out(tx_out)
                 self._address_index[spk_hex].add(key)
                 self._key_to_spk[key] = spk_hex
+                self._key_to_amount[key] = amt
+                self._addr_total_balance[spk_hex] = self._addr_total_balance.get(spk_hex, 0) + amt
+                is_cb = bool(entry.get("is_coinbase", False))
+                if is_cb:
+                    born = int(entry.get("block_height", entry.get("height", 0)))
+                    self._coinbases_by_height[born][key] = (spk_hex, amt)
 
 
     def _get_index_bucket(self, script_hex: str) -> set[str]:
@@ -179,8 +190,15 @@ class UTXOBalanceMixin:
         
         spk_hex = self._script_hex_from_tx_out(tx_out)
         if spk_hex:
+            amt = self._amount_from_tx_out(tx_out)
             self._address_index.setdefault(spk_hex, set()).add(key)
             self._key_to_spk[key] = spk_hex
+            self._key_to_amount[key] = amt
+            self._addr_total_balance[spk_hex] = self._addr_total_balance.get(spk_hex, 0) + amt
+            entry = self.utxos.get(key)
+            if entry and bool(entry.get("is_coinbase", False)):
+                born = int(entry.get("block_height", entry.get("height", 0)))
+                self._coinbases_by_height[born][key] = (spk_hex, amt)
 
 
     def _drop_index_entry(self, key: str):
@@ -189,8 +207,21 @@ class UTXOBalanceMixin:
         spk = self._key_to_spk.pop(key, None)
         if not spk:
             return
+        amt = self._key_to_amount.pop(key, 0)
         bucket = self._address_index.get(spk)
         if bucket:
             bucket.discard(key)
             if not bucket:
                 self._address_index.pop(spk, None)
+        if spk in self._addr_total_balance:
+            rem = self._addr_total_balance[spk] - amt
+            if rem <= 0:
+                self._addr_total_balance.pop(spk, None)
+            else:
+                self._addr_total_balance[spk] = rem
+        for born, d in list(self._coinbases_by_height.items()):
+            if key in d:
+                d.pop(key, None)
+                if not d:
+                    self._coinbases_by_height.pop(born, None)
+                break

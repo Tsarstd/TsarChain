@@ -164,7 +164,7 @@ def fetch_graffiti_chunk(
     return {"status": "error", "reason": last_error or "unavailable"}
 
 
-@benchmark(label="fetch_graffiti_file", threshold_ms=15.0)
+@benchmark(label="fetch_graffiti_file", threshold_ms=1000.0)
 def fetch_graffiti_file(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
     art_id: str,

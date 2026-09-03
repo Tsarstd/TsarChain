@@ -48,7 +48,10 @@ class TxMempoolValidator:
                 return self._validate_payout_tx(tx, payout_meta, utxo_set)
 
             compact_tx = tx_to_compact_tuple(tx)
-            utxo_items = self._utxo_snapshot_to_items(utxo_set)
+            target_keys = {
+                k for k in (self._txin_prevkey(tin) for tin in (tx.inputs or [])) if k
+            }
+            utxo_items = self._utxo_snapshot_to_items(utxo_set, target_keys=target_keys)
             opts = {
                 "coinbase_maturity": CFG.COINBASE_MATURITY,
                 "max_sigops_per_tx": CFG.MAX_SIGOPS_PER_TX,
@@ -427,12 +430,22 @@ class TxMempoolValidator:
         raise ValueError(f"Unknown UTXO format: {utxo_data}")
 
     def _txin_prev_txid(self, tx_in) -> str | None:
-        txid_val = tx_in.txid if tx_in.txid is not None else tx_in.prev_tx
+        if type(tx_in) is dict:
+            txid_val = tx_in.get("txid") if tx_in.get("txid") is not None else tx_in.get("prev_tx")
+        else:
+            txid_val = tx_in.txid if tx_in.txid is not None else tx_in.prev_tx
         if txid_val is None:
             return None
         if type(txid_val) in (bytes, bytearray):
             return txid_val.hex().lower()
         return str(txid_val).lower()
+
+    def _txin_prevkey(self, tx_in) -> str | None:
+        txid_hex = self._txin_prev_txid(tx_in)
+        if not txid_hex:
+            return None
+        vout = tx_in.get("vout", 0) if type(tx_in) is dict else tx_in.vout
+        return f"{txid_hex}:{int(vout or 0)}"
 
     def _lookup_utxo_entry(self, snapshot, prev_txid_hex: str, prev_index: int):
         if prev_txid_hex is None:
@@ -451,10 +464,29 @@ class TxMempoolValidator:
             return lookup_method(txid, idx)
         return None
 
-    def _utxo_snapshot_to_items(self, snapshot) -> list[tuple]:
+    def _utxo_snapshot_to_items(self, snapshot, target_keys=None) -> list[tuple]:
         if type(snapshot) is not dict:
             return []
         items = []
+        if target_keys is not None:
+            for key in target_keys:
+                entry = snapshot.get(key)
+                if entry is None and type(key) is str:
+                    entry = snapshot.get(key.encode("utf-8"))
+                if entry is None:
+                    continue
+                key_str = key.decode("utf-8") if type(key) in (bytes, bytearray) else str(key)
+                if ":" not in key_str:
+                    continue
+                txid_hex, vout_str = key_str.split(":", 1)
+                txid_b = bytes.fromhex(txid_hex)
+                vout_i = int(vout_str)
+                amt = self._get_utxo_amount(entry)
+                spk_bytes = get_utxo_script_bytes(entry)
+                is_cb, born = self.utxo._get_utxo_meta(entry)
+                items.append((txid_b, vout_i, int(amt), spk_bytes, bool(is_cb), int(born)))
+            return items
+
         for key, entry in snapshot.items():
             key_str = key.decode("utf-8") if type(key) in (bytes, bytearray) else str(key)
             if ":" not in key_str:
