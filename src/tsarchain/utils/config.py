@@ -87,6 +87,16 @@ import appdirs
 IS_DEV = True  # switch to False for live production nodes
 
 
+# ---- PUBLIC IP ADVERTISEMENT ----
+# Public IPv4 address of this node used to advertise co-located services to external clients.
+# Co-located services (e.g., Archivist storage nodes, web backend) connect locally to the node
+# via loopback (127.0.0.1) for maximum performance and rate-limit/temp-ban immunity.
+# When external clients (desktop & mobile wallets) query STOR_LIST, loopback storer IPs
+# are dynamically translated to this address so external wallets can reach the storage node
+# on this server without exposing or breaking internal localhost isolation.
+NODE_PUBLIC_IP  = "38.253.224.105"
+
+
 # ---- APP METADATA ----
 APP_NAME        = "Kremlin"  # display name used for user data directories
 APP_AUTHOR      = "TsarStudio"  # vendor string passed into platform dir helpers
@@ -134,7 +144,7 @@ WEB_DATABASE_PATH      = "data/web"  # dedicated LMDB path for web cache
 WEB_MEDIA_CACHE_DIR    = "data/web/graffiti_cache"  # path for cached media files
 WEB_RECEIPTS_DIR       = "data/web/receipts"  # path for generated receipts
 WEB_HISTORY_BOOKS_DIR  = "data/web/history_books"  # path for generated history books
-WEB_EXPLORER_URL       = "http://38.253.224.105/?search="  # base url for receipt & history QR codes
+WEB_EXPLORER_URL       = f"http://{NODE_PUBLIC_IP}/?search="  # base url for receipt & history QR codes
 LMDB_WEB_SIZE_INIT     = 10 * 1024 * 1024  # initial web LMDB size (10 MB)
 LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
@@ -161,7 +171,7 @@ SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot down
 SNAPSHOT_MANIFEST_URL      = ""  # e.g. "http://seed1.tsarchain.org:8000/snapshot.manifest.json"
 
 # Direct URL to tsarchain.tar.gz archive (used if manifest URL is empty or specified directly)
-SNAPSHOT_FILE_URL          = "http://38.253.224.105:8121/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
+SNAPSHOT_FILE_URL          = f"http://{NODE_PUBLIC_IP}:8121/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True (True in prod, False in test/dev)
 SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded secp256k1 pubkey used to verify snapshot signature
 
@@ -389,15 +399,6 @@ else:
     STORAGE_PORT_START, STORAGE_PORT_END = STORAGE_PORT_RANGE_PROD
 
 BOOTSTRAP_NODE           = BOOTSTRAP_NODES[0]  # preferred bootstrap peer entry
-
-# ---- PUBLIC IP ADVERTISEMENT ----
-# Public IPv4 address of this node used to advertise co-located services to external clients.
-# Co-located services (e.g., Archivist storage nodes, web backend) connect locally to the node
-# via loopback (127.0.0.1) for maximum performance and rate-limit/temp-ban immunity.
-# When external clients (desktop & mobile wallets) query STOR_LIST, loopback storer IPs
-# are dynamically translated to this address so external wallets can reach the storage node
-# on this server without exposing or breaking internal localhost isolation.
-NODE_PUBLIC_IP           = "38.253.224.105"
 
 
 # ---- SOCKET DEFAULTS ----
