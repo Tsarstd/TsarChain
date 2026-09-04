@@ -13,7 +13,8 @@ from tsarchain.utils import config as CFG
 @pytest.fixture
 def mock_kv():
     with patch("tsarchain.contracts.graffiti_registry.iter_prefix") as m_iter, \
-         patch("tsarchain.contracts.graffiti_registry.batch") as m_batch:
+         patch("tsarchain.contracts.graffiti_registry.batch") as m_batch, \
+         patch("tsarchain.contracts.graffiti_registry.put") as m_put:
         yield m_iter, m_batch
 
 def test_init_kv_empty(mock_kv):

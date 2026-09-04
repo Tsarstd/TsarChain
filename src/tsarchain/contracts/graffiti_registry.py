@@ -10,7 +10,7 @@ import struct
 from typing import Any, Dict
 
 from ..utils import config as CFG
-from ..storage.kv import iter_prefix, batch
+from ..storage.kv import iter_prefix, batch, put
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
@@ -226,16 +226,17 @@ class GraffitiRegistry:
             "ts": int(time.time()),
         }
         # Replace existing entry for same storer+epoch
-        replaced = False
+        target_idx = len(art_proofs)
         for idx, item in enumerate(art_proofs):
             if item.get("storer") == storer and int(item.get("epoch", -1)) == int(epoch):
                 art_proofs[idx] = entry
-                replaced = True
+                target_idx = idx
                 break
-        if not replaced:
+        else:
             art_proofs.append(entry)
         self.data["proofs"][art_id] = art_proofs
-        self._flush()
+        put("graffiti", f"r:{art_id}:{target_idx:08d}".encode("utf-8"), serialize_proof_binary(entry))
+        self._stored_counts.setdefault("proofs", {})[art_id] = len(art_proofs)
 
 
     def get_proof(self, art_id: str, storer: str, epoch: int) -> Dict[str, Any] | None:

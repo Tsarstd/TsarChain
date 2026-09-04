@@ -147,7 +147,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
     conn.settimeout(None)
 
     while True:
-        payload = recv_fn(10.0)
+        payload = recv_fn(float(CFG.RPC_CONN_TTL_SEC))
         if not payload:
             break
         
