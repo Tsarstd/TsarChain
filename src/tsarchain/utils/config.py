@@ -162,7 +162,7 @@ WEB_ALLOWED_ORIGINS = "*"
 Set True on new/client nodes to download snapshot (.tar.gz) on startup.
 Set False on seed/VPS/genesis nodes.
 '''
-SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
+SNAPSHOT_BOOTSTRAP_ENABLED = True  # allow nodes to bootstrap via snapshot downloads
 
 
 # ---- SNAPSHOT REMOTE SOURCE & SIGNING ----
@@ -191,7 +191,7 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 Set True on VPS/seed nodes to automatically export & package sub-databases (chain, utxo, state, graffiti, mempool)
 into data/snapshot/tsarchain.tar.gz
 '''
-BACKUP_SNAPSHOT       = True  # True on VPS/Seed node to generate snapshot archives; False on client nodes
+BACKUP_SNAPSHOT       = False  # True on VPS/Seed node to generate snapshot archives; False on client nodes
 
 BLOCK_BACKUP_SNAPSHOT = 20  # Block interval to generate new snapshot archive (e.g. 50-100 for dev test, 1000 for prod)
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
@@ -767,7 +767,7 @@ DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/p
 # ---- MODE PROFILES ----
 if IS_DEV:
     # ---- DEV PROFILE ----
-    LOG_LEVEL                   = "INFO"  # balanced verbosity for development
+    LOG_LEVEL                   = "DEBUG"  # balanced verbosity for development
     LOG_FORMAT                  = "plain"  # plain text logs ease local debugging
     LOG_TO_CONSOLE              = False  # mirror logs to stdout for dev loops
     LOG_RATE_LIMIT_SECONDS      = 0.0  # disable console throttling in dev

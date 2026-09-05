@@ -16,7 +16,7 @@ class NetworkHandlerProxy:
             raise AttributeError(name)
         self._tls.in_getattr = True
         try:
-            return self.network.__getattribute__(name)
+            return getattr(self.network, name)
         except AttributeError:
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
         finally:
