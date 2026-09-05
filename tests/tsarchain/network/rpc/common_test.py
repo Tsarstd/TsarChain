@@ -80,7 +80,7 @@ def test_verify_chat_signatures(mock_batch_verify):
     mock_batch_verify.assert_called_once()
     args, kwargs = mock_batch_verify.call_args
     assert kwargs["enforce_low_s"] is True
-    assert kwargs["parallel"] is False
+    assert kwargs["parallel"] is True
     assert len(args[0]) == 2 # two triples
 
 def test_summarize_block():

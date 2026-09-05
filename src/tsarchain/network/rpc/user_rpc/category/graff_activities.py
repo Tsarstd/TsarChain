@@ -16,7 +16,7 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.graff_activities")
 
 
 
-@benchmark(label="GET_POSTS", threshold_ms=15.0)
+@benchmark(label="GET_POSTS", threshold_ms=10.0)
 def get_posts(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     
@@ -34,7 +34,7 @@ def get_posts(self, message, pow_obj, base_identity, *,
     return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
 
 
-@benchmark(label="GET_COMMENTS", threshold_ms=15.0)
+@benchmark(label="GET_COMMENTS", threshold_ms=10.0)
 def get_comments(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     ok, pow_resp = _check_graffiti_pow(self, client_ip, base_identity, pow_obj)
@@ -52,7 +52,7 @@ def get_comments(self, message, pow_obj, base_identity, *,
     return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
 
 
-@benchmark(label="GET_ART", threshold_ms=15.0)
+@benchmark(label="GET_ART", threshold_ms=10.0)
 def get_art(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     ok, pow_resp = _check_graffiti_pow(self, client_ip, base_identity, pow_obj)
@@ -71,7 +71,7 @@ def get_art(self, message, pow_obj, base_identity, *,
     return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "post": post}
 
 
-@benchmark(label="GET_PAYOUTS", threshold_ms=15.0)
+@benchmark(label="GET_PAYOUTS", threshold_ms=10.0)
 def get_payouts(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs): #NOTE : not used yet
 

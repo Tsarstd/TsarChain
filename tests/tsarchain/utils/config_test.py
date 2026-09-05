@@ -19,7 +19,10 @@ def test_clean_relative_paths():
     assert CFG.WEB_SERVER_HOST == "0.0.0.0"
     assert CFG.WEB_SERVER_PORT == 4000
     assert CFG.WEB_NODE_HOST == "127.0.0.1"
-    assert CFG.WEB_NODE_PORT == 19000
-    assert "http://localhost:7542" in CFG.WEB_ALLOWED_ORIGINS
+    assert CFG.WEB_NODE_PORT == 38169
 
 
+@pytest.mark.no_storage_isolation
+def test_node_public_ip_urls():
+    assert CFG.WEB_EXPLORER_URL == f"http://{CFG.NODE_PUBLIC_IP}/?search="
+    assert CFG.SNAPSHOT_FILE_URL == f"http://{CFG.NODE_PUBLIC_IP}:8121/tsarchain.tar.gz"

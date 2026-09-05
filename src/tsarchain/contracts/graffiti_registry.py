@@ -10,7 +10,7 @@ import struct
 from typing import Any, Dict
 
 from ..utils import config as CFG
-from ..storage.kv import iter_prefix, batch
+from ..storage.kv import iter_prefix, batch, put
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
@@ -41,14 +41,14 @@ def serialize_post_binary(entry: dict) -> bytes:
     return header + payload
 
 
+def _deserialize_binary(raw: bytes, struct_fmt: str) -> dict:
+    header_size = struct.calcsize(struct_fmt)
+    *_, payload_len = struct.unpack_from(struct_fmt, raw, 0)
+    return json.loads(raw[header_size:header_size + payload_len].decode("utf-8"))
+
+
 def deserialize_post_binary(raw: bytes, art_id: str = "") -> dict:
-    header_size = struct.calcsize(_POST_HEADER_STRUCT)
-    if len(raw) >= header_size and not raw.startswith(b"{"):
-        *_, payload_len = struct.unpack_from(_POST_HEADER_STRUCT, raw, 0)
-        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-        data = json.loads(payload_json)
-    else:
-        data = json.loads(raw.decode("utf-8"))
+    data = _deserialize_binary(raw, _POST_HEADER_STRUCT)
     if art_id and "art_id" not in data:
         data["art_id"] = art_id
     return data
@@ -67,12 +67,7 @@ def serialize_comment_binary(entry: dict) -> bytes:
 
 
 def deserialize_comment_binary(raw: bytes) -> dict:
-    header_size = struct.calcsize(_COMMENT_HEADER_STRUCT)
-    if len(raw) >= header_size and not raw.startswith(b"{"):
-        *_, payload_len = struct.unpack_from(_COMMENT_HEADER_STRUCT, raw, 0)
-        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-        return json.loads(payload_json)
-    return json.loads(raw.decode("utf-8"))
+    return _deserialize_binary(raw, _COMMENT_HEADER_STRUCT)
 
 
 def serialize_payout_binary(entry: dict) -> bytes:
@@ -85,12 +80,7 @@ def serialize_payout_binary(entry: dict) -> bytes:
 
 
 def deserialize_payout_binary(raw: bytes) -> dict:
-    header_size = struct.calcsize(_PAYOUT_HEADER_STRUCT)
-    if len(raw) >= header_size and not raw.startswith(b"{"):
-        *_, payload_len = struct.unpack_from(_PAYOUT_HEADER_STRUCT, raw, 0)
-        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-        return json.loads(payload_json)
-    return json.loads(raw.decode("utf-8"))
+    return _deserialize_binary(raw, _PAYOUT_HEADER_STRUCT)
 
 
 def serialize_proof_binary(entry: dict) -> bytes:
@@ -105,12 +95,7 @@ def serialize_proof_binary(entry: dict) -> bytes:
 
 
 def deserialize_proof_binary(raw: bytes) -> dict:
-    header_size = struct.calcsize(_PROOF_HEADER_STRUCT)
-    if len(raw) >= header_size and not raw.startswith(b"{"):
-        *_, payload_len = struct.unpack_from(_PROOF_HEADER_STRUCT, raw, 0)
-        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-        return json.loads(payload_json)
-    return json.loads(raw.decode("utf-8"))
+    return _deserialize_binary(raw, _PROOF_HEADER_STRUCT)
 
 
 class GraffitiRegistry:
@@ -241,16 +226,17 @@ class GraffitiRegistry:
             "ts": int(time.time()),
         }
         # Replace existing entry for same storer+epoch
-        replaced = False
+        target_idx = len(art_proofs)
         for idx, item in enumerate(art_proofs):
             if item.get("storer") == storer and int(item.get("epoch", -1)) == int(epoch):
                 art_proofs[idx] = entry
-                replaced = True
+                target_idx = idx
                 break
-        if not replaced:
+        else:
             art_proofs.append(entry)
         self.data["proofs"][art_id] = art_proofs
-        self._flush()
+        put("graffiti", f"r:{art_id}:{target_idx:08d}".encode("utf-8"), serialize_proof_binary(entry))
+        self._stored_counts.setdefault("proofs", {})[art_id] = len(art_proofs)
 
 
     def get_proof(self, art_id: str, storer: str, epoch: int) -> Dict[str, Any] | None:

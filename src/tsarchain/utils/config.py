@@ -87,6 +87,16 @@ import appdirs
 IS_DEV = True  # switch to False for live production nodes
 
 
+# ---- PUBLIC IP ADVERTISEMENT ----
+# Public IPv4 address of this node used to advertise co-located services to external clients.
+# Co-located services (e.g., Archivist storage nodes, web backend) connect locally to the node
+# via loopback (127.0.0.1) for maximum performance and rate-limit/temp-ban immunity.
+# When external clients (desktop & mobile wallets) query STOR_LIST, loopback storer IPs
+# are dynamically translated to this address so external wallets can reach the storage node
+# on this server without exposing or breaking internal localhost isolation.
+NODE_PUBLIC_IP  = "38.253.224.105"
+
+
 # ---- APP METADATA ----
 APP_NAME        = "Kremlin"  # display name used for user data directories
 APP_AUTHOR      = "TsarStudio"  # vendor string passed into platform dir helpers
@@ -134,7 +144,7 @@ WEB_DATABASE_PATH      = "data/web"  # dedicated LMDB path for web cache
 WEB_MEDIA_CACHE_DIR    = "data/web/graffiti_cache"  # path for cached media files
 WEB_RECEIPTS_DIR       = "data/web/receipts"  # path for generated receipts
 WEB_HISTORY_BOOKS_DIR  = "data/web/history_books"  # path for generated history books
-WEB_EXPLORER_URL       = "http://localhost:7542/?search="  # base url for receipt & history QR codes
+WEB_EXPLORER_URL       = f"http://{NODE_PUBLIC_IP}/?search="  # base url for receipt & history QR codes
 LMDB_WEB_SIZE_INIT     = 10 * 1024 * 1024  # initial web LMDB size (10 MB)
 LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
@@ -143,9 +153,8 @@ LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 WEB_SERVER_HOST     = "0.0.0.0"  # default host interface to bind web explorer API
 WEB_SERVER_PORT     = 4000  # default port for web explorer API
 WEB_NODE_HOST       = "127.0.0.1"  # default TsarChain node RPC host
-WEB_NODE_PORT       = 19000  # default TsarChain node RPC port
-WEB_ALLOWED_ORIGINS = "http://localhost:7542"
-
+WEB_NODE_PORT       = 38169  # default TsarChain node RPC port
+WEB_ALLOWED_ORIGINS = "*"
 
 
 # ---- SNAPSHOT MODES (FAST SYNC BOOTSTRAP) ----
@@ -153,7 +162,7 @@ WEB_ALLOWED_ORIGINS = "http://localhost:7542"
 Set True on new/client nodes to download snapshot (.tar.gz) on startup.
 Set False on seed/VPS/genesis nodes.
 '''
-SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
+SNAPSHOT_BOOTSTRAP_ENABLED = True  # allow nodes to bootstrap via snapshot downloads
 
 
 # ---- SNAPSHOT REMOTE SOURCE & SIGNING ----
@@ -162,7 +171,7 @@ SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot down
 SNAPSHOT_MANIFEST_URL      = ""  # e.g. "http://seed1.tsarchain.org:8000/snapshot.manifest.json"
 
 # Direct URL to tsarchain.tar.gz archive (used if manifest URL is empty or specified directly)
-SNAPSHOT_FILE_URL          = "http://localhost:8000/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
+SNAPSHOT_FILE_URL          = f"http://{NODE_PUBLIC_IP}:8121/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True (True in prod, False in test/dev)
 SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded secp256k1 pubkey used to verify snapshot signature
 
@@ -182,7 +191,7 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 Set True on VPS/seed nodes to automatically export & package sub-databases (chain, utxo, state, graffiti, mempool)
 into data/snapshot/tsarchain.tar.gz
 '''
-BACKUP_SNAPSHOT       = True  # True on VPS/Seed node to generate snapshot archives; False on client nodes
+BACKUP_SNAPSHOT       = False  # True on VPS/Seed node to generate snapshot archives; False on client nodes
 
 BLOCK_BACKUP_SNAPSHOT = 20  # Block interval to generate new snapshot archive (e.g. 50-100 for dev test, 1000 for prod)
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
@@ -407,27 +416,27 @@ GOSSIP_CONN_TTL          = 10.0  # seconds a cached gossip socket stays valid be
 
 # ---- ANTI-DOS LIMITS ----
 MAX_ADDRS_PER_REQ              = 15  # max addresses accepted per addr message
-MAX_HISTORY_LIMIT              = 200  # cap on stored addr history per peer
+MAX_HISTORY_LIMIT              = 1500  # cap on stored addr history per peer
 MAX_UTXO_ADDR_LEN              = 64  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
 
-HANDSHAKE_RL_PER_IP_BURST      = 20  # burst limit when rate-limiting handshakes
-HANDSHAKE_RL_PER_IP_WINDOW_S   = 30  # time window for handshake rate limit
-HANDSHAKE_RL_PER_NODE_BURST    = 80  # burst limit per node_id to avoid CGNAT false positives
+HANDSHAKE_RL_PER_IP_BURST      = 250  # burst limit when rate-limiting handshakes
+HANDSHAKE_RL_PER_IP_WINDOW_S   = 10   # time window for handshake rate limit
+HANDSHAKE_RL_PER_NODE_BURST    = 200  # burst limit per node_id to avoid CGNAT false positives
 
-HANDSHAKE_RL_PER_NODE_WINDOW_S = 10  # time window for per-node limiter
-HANDSHAKE_RL_SUBNET_BURST      = 100  # burst cap per /24
-HANDSHAKE_RL_SUBNET_WINDOW_S   = 20  # subnet limiter window (seconds)
+HANDSHAKE_RL_PER_NODE_WINDOW_S = 10   # time window for per-node limiter
+HANDSHAKE_RL_SUBNET_BURST      = 400  # burst cap per /24
+HANDSHAKE_RL_SUBNET_WINDOW_S   = 15   # subnet limiter window (seconds)
 
-CGNAT_IP_BURST_MULT            = 3  # multiplier to loosen per-IP limits when identity is present
-TEMP_BAN_SECONDS               = 300  # duration for temporary ban entries
-BAN_MALICIOUS_RPC              = 600  # temp ban duration when receiving unregistered RPC types
+CGNAT_IP_BURST_MULT            = 6    # multiplier to loosen per-IP limits when identity is present
+TEMP_BAN_SECONDS               = 10   # duration for temporary ban entries
+BAN_MALICIOUS_RPC              = 180  # temp ban duration when receiving unregistered RPC types
 
 POW_TOKEN_TTL_S                = 120  # default TTL for PoW challenge/cookie
 RPC_POW_DIFFICULTY_TX          = 16  # difficulty bits for TX submit / wallet-heavy RPC
 RPC_POW_DIFFICULTY_READ        = 12  # difficulty bits for read-only RPC (info/history/graffiti)
-RPC_POW_DIFFICULTY_CHAT        = 14  # difficulty bits for chat presence/send/lookup
+RPC_POW_DIFFICULTY_CHAT        = 8  # difficulty bits for chat presence/send/lookup
 
 
 # ---- PAYLOAD BOUNDS & MEMPOOL SYNC ----
@@ -495,30 +504,30 @@ CHAT_SPK              = b"TSAR-SPK|"
 
 
 # ---- CHAT PAYLOAD LIMITS ----
-CHAT_MAX_CT_BYTES     = 2 * 1024  # ciphertext size cap per chat message
-CHAT_TS_DRIFT_S       = 120  # tolerated timestamp drift for chat payloads
-CHAT_TTL_S            = 86400  # chat retention window (seconds)
-CHAT_MAILBOX_MAX      = 250  # messages kept per recipient mailbox
-CHAT_GLOBAL_QUEUE_MAX = 20_000  # max pending chat messages globally
+CHAT_MAX_CT_BYTES     = 8 * 1024  # ciphertext size cap per chat message
+CHAT_TS_DRIFT_S       = 600  # tolerated timestamp drift for chat payloads
+CHAT_TTL_S            = 2 * 86400  # chat retention window (seconds)
+CHAT_MAILBOX_MAX      = 1000  # messages kept per recipient mailbox
+CHAT_GLOBAL_QUEUE_MAX = 50_000  # max pending chat messages globally
 CHAT_PULL_MAX_ITEMS   = 50  # entries returned per chat pull request
 
 
 # ---- CHAT POLLING ----
 CHAT_POLL_INTERVAL_MS       = 3000  # default polling interval for chat client
 CHAT_POLL_INITIAL_MS        = 4000  # initial backoff before first poll
-CHAT_PUBLISH_MIN_INTERVAL_S = 10  # throttle between chat publish attempts
+CHAT_PUBLISH_MIN_INTERVAL_S = 5  # throttle between chat publish attempts
 
 
 # ---- CHAT RATE LIMITS ----
-CHAT_RL_ADDR_BURST   = 25  # per-address burst allowance for chat msgs
+CHAT_RL_ADDR_BURST   = 60  # per-address burst allowance for chat msgs
 CHAT_RL_ADDR_WINDOWS = 10  # seconds over which per-address burst is evaluated
-CHAT_RL_IP_BURST     = 50  # per-IP burst allowance for chat msgs
+CHAT_RL_IP_BURST     = 150  # per-IP burst allowance for chat msgs
 CHAT_RL_IP_WINDOWS   = 10  # seconds over which per-IP burst is evaluated
-CHAT_BACKOFF_S       = 13  # seconds to wait after rate limiter trips
+CHAT_BACKOFF_S       = 3  # seconds to wait after rate limiter trips
 
 
 # ---- PRESENCE RELAY ----
-PRESENCE_RL_ADDR_BURST   = 2  # per-address burst allowance for presence relays
+PRESENCE_RL_ADDR_BURST   = 10  # per-address burst allowance for presence relays
 PRESENCE_RL_ADDR_WINDOWS = 10  # seconds window for presence addr limiter
 PRESENCE_MAX_HOPS        = 3  # maximum hops for relayed presence updates
 PRESENCE_TTL_S           = 3600  # lifespan of presence announcements
@@ -558,27 +567,27 @@ WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
 
 
 # ---- PING LOOKUP THROTTLING ----
-PING_RL_IP_BURST    = 5 # ping requests allowed per IP before throttling
+PING_RL_IP_BURST    = 20 # ping requests allowed per IP before throttling
 PING_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
-PING_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
+PING_RL_BACKOFF_S   = 5  # seconds to backoff when the limiter trips
 
 
 # ---- GET PEERS LOOKUP THROTTLING ----
-GET_PEERS_RL_IP_BURST    = 5 # get_peers requests allowed per IP before throttling
+GET_PEERS_RL_IP_BURST    = 20 # get_peers requests allowed per IP before throttling
 GET_PEERS_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
-GET_PEERS_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
+GET_PEERS_RL_BACKOFF_S   = 5  # seconds to backoff when the limiter trips
 
 
 # ---- BALANCE LOOKUP THROTTLING ----
-BALANCE_RL_IP_BURST    = 15   # balance queries allowed per IP before throttling
-BALANCE_RL_IP_WINDOW_S = 4   # time window (seconds) evaluated by the limiter
-BALANCE_RL_BACKOFF_S   = 3   # seconds to backoff when the limiter trips
+BALANCE_RL_IP_BURST    = 25   # balance queries allowed per IP before throttling
+BALANCE_RL_IP_WINDOW_S = 4    # time window (seconds) evaluated by the limiter
+BALANCE_RL_BACKOFF_S   = 3    # seconds to backoff when the limiter trips
 
 
 # ---- INFO SNAPSHOT THROTTLING ----
-INFO_RL_IP_BURST    = 4   # GET_INFO / GET_NETWORK_INFO allowed per IP within window
+INFO_RL_IP_BURST    = 20  # GET_INFO / GET_NETWORK_INFO allowed per IP within window
 INFO_RL_IP_WINDOW_S = 8   # seconds evaluated by limiter
-INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
+INFO_RL_BACKOFF_S   = 3   # backoff applied when limit exceeded
 
 
 # ---- HISTORY / UTXO LOOKUP THROTTLING ----
@@ -597,18 +606,20 @@ MEMPOOL_INLINE_RL_BACKOFF  = 10  # seconds to wait after hitting inline limiter
 CHAT_REG_RL_IP_BURST       = 15   # chat register/prekey submissions allowed per IP
 CHAT_REG_RL_WINDOW_S       = 30  # seconds window for chat register limiter
 CHAT_REG_RL_BACKOFF_S      = 5  # cooldown after chat register limiter trips
+
 CHAT_REG_RL_ADDR_BURST     = 10   # chat register limiter per address
 CHAT_REG_RL_ADDR_WINDOW_S  = 30  # seconds window for chat register per-address limiter
 CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limiter trips
 
 
 # ---- CHAT LOOKUP THROTTLING ----
-CHAT_LOOKUP_RL_IP_BURST       = 20   # lookup pubkey chat per IP
+CHAT_LOOKUP_RL_IP_BURST       = 80   # lookup pubkey chat per IP
 CHAT_LOOKUP_RL_IP_WINDOW_S    = 10   # seconds window for pubkey lookup limiter
-CHAT_LOOKUP_RL_BACKOFF_S      = 5    # backoff after pubkey lookup limiter is triggered
-CHAT_LOOKUP_RL_ADDR_BURST     = 10   # pubkey lookup limiter per address
+CHAT_LOOKUP_RL_BACKOFF_S      = 2    # backoff after pubkey lookup limiter is triggered
+
+CHAT_LOOKUP_RL_ADDR_BURST     = 30   # pubkey lookup limiter per address
 CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10   # seconds window for per-address pubkey lookup limiter
-CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8    # backoff after per-address pubkey lookup limiter is triggered
+CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 3    # backoff after per-address pubkey lookup limiter is triggered
 
 
 # ---- USER RPC THROTTLING ----
@@ -625,6 +636,7 @@ BLOCK_RANGE_RL_BACKOFF_S   = 3   # backoff after block fetch limiter trips
 TX_SUBMIT_RL_IP_BURST       = 12  # NEW_TX submissions allowed per IP before throttling
 TX_SUBMIT_RL_WINDOW_S       = 6   # seconds window for tx submit limiter
 TX_SUBMIT_RL_BACKOFF_S      = 6   # backoff after tx submit limiter trips
+
 TX_SUBMIT_RL_ADDR_BURST     = 10  # per-address tx submit limiter
 TX_SUBMIT_RL_ADDR_WINDOW_S  = 10  # seconds window for per-address limiter
 TX_SUBMIT_RL_ADDR_BACKOFF_S = 8  # backoff after per-address limiter trips
@@ -755,14 +767,14 @@ DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/p
 # ---- MODE PROFILES ----
 if IS_DEV:
     # ---- DEV PROFILE ----
-    LOG_LEVEL                   = "TRACE"  # very verbose logging for development
+    LOG_LEVEL                   = "DEBUG"  # balanced verbosity for development
     LOG_FORMAT                  = "plain"  # plain text logs ease local debugging
     LOG_TO_CONSOLE              = False  # mirror logs to stdout for dev loops
     LOG_RATE_LIMIT_SECONDS      = 0.0  # disable console throttling in dev
     LOG_FILE_RATE_LIMIT_SECONDS = 0.0  # disable file throttling in dev
     LOG_ROTATE_MAX_BYTES        = 5_000_000  # rollover log files after ~5MB in dev
     LOG_BACKUP_COUNT            = 3  # retain a few rotated dev log files
-    FILTER_REDAX                = False # sensitive area, priv_key, .etc (debuging only)
+    FILTER_REDAX                = True # sanitize sensitive keys and secrets
 else:
     # ---- PROD PROFILE ----
     LOG_LEVEL                   = "INFO"  # balanced verbosity for production

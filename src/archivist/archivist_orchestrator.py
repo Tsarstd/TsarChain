@@ -148,7 +148,7 @@ class ArchivistOrchestrator:
     def stop(self) -> None:
         self._stop.set()
         self.connected = False
-        self.rpc.node = None
+        self.rpc.disconnect()
         self.pending_paid.clear()
         self.pool_data.clear()
         self._log("Shutdown complete.")

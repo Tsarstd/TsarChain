@@ -156,3 +156,34 @@ def test_rpc_send_recv(mock_cp):
         
         mock_recv.return_value = b""
         assert rpc._recv() is None
+
+
+@patch("archivist.connect.create_keypair", return_value=("id", "0"*64, "0"*64))
+@patch("archivist.connect._connect_socket")
+@patch("archivist.connect.SecureChannel")
+def test_rpc_persistent_channel_reuse(mock_chan, mock_sock, mock_cp):
+    rpc = RPC()
+    rpc.node = ("127.0.0.1", 1234)
+    
+    chan_inst = MagicMock()
+    mock_chan.return_value = chan_inst
+    chan_inst.recv.return_value = json.dumps({"type": "PONG"}).encode("utf-8")
+    
+    # Call 1
+    res1 = rpc.call({"type": "PING"})
+    assert res1["type"] == "PONG"
+    
+    # Call 2
+    res2 = rpc.call({"type": "PING"})
+    assert res2["type"] == "PONG"
+    
+    # Handshake and socket connect should only be called once!
+    assert mock_sock.call_count == 1
+    assert chan_inst.handshake.call_count == 1
+    assert chan_inst.send.call_count == 2
+    
+    # Test disconnect cleans up channel
+    rpc.disconnect()
+    assert rpc.node is None
+    assert rpc._chan is None
+    assert rpc._sock is None

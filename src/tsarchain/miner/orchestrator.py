@@ -632,8 +632,6 @@ class NodeRunner:
                     time.sleep(5)
                     continue
 
-                # Have peers — request fast sync
-                self.network.request_sync(fast=True)
                 # Heights
                 height = int(self.blockchain.height if self.blockchain else -1)
                 # Progress print (only when changed)
@@ -649,9 +647,16 @@ class NodeRunner:
                     self._sync_ready = True
                     clog("Chain has been confirmed. Node is live (no mining).")
 
+                if not self._sync_ready:
+                    self.network.request_sync(fast=True)
+                    time.sleep(5)
+                else:
+                    self.network.request_sync(fast=False)
+                    time.sleep(30)
+
             except Exception as e:
                 clog(f"[node-only] sync error: {e}")
-            time.sleep(5)
+                time.sleep(5)
 
 
     def shutdown(self):

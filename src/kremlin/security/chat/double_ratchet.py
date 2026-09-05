@@ -276,12 +276,10 @@ class RatchetSession:
                 log.warning("[decrypt] skipped mk decrypt failed for %s mid=%s: %s", frm, mid, e)
                 return None
 
-        # Skip keys if previous chain length is ahead
-        if self.dhr is not None:
-            self._skip_message_keys(pn, self.dhr)
-
-        # Perform DH ratchet if peer ephemeral key changed
+        # Perform DH ratchet and skip keys from previous chain length if peer ephemeral key changed
         if self.dhr != eph_hex:
+            if self.dhr is not None:
+                self._skip_message_keys(pn, self.dhr)
             self._dh_ratchet(eph_hex)
 
         # Skip keys up to the current message index

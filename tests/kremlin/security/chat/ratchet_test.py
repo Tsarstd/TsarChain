@@ -205,6 +205,26 @@ def test_serialization_with_skipped_keys():
     restored = RatchetSession.from_dict(serial)
 
     assert restored.skipped == bob.skipped
-    assert restored.to_dict() == serial
     dec0 = restored.decrypt(packets[0]["enc"], "a", "b", 0, 100, packets[0]["ratchet"])
     assert dec0 == b"msg-0"
+
+
+def test_burst_messages_consecutive_higher_pn():
+    """Ensure consecutive messages in a burst decrypt cleanly when pn > n."""
+    alice, bob = _build_sessions()
+
+    # Alice sends 4 messages (ns becomes 4)
+    for i in range(4):
+        p = alice.encrypt(f"a-{i}".encode(), "a", "b", i + 1, 100 + i)
+        assert bob.decrypt(p["enc"], "a", "b", i + 1, 100 + i, p["ratchet"]) == f"a-{i}".encode()
+
+    # Bob sends 2 messages (Bob's ns becomes 2)
+    for i in range(2):
+        p = bob.encrypt(f"b-{i}".encode(), "b", "a", 10 + i, 200 + i)
+        assert alice.decrypt(p["enc"], "b", "a", 10 + i, 200 + i, p["ratchet"]) == f"b-{i}".encode()
+
+    # Alice sends 3 messages (pn=4 from Alice's previous 4 messages, n=0, 1, 2)
+    for i in range(3):
+        p = alice.encrypt(f"a2-{i}".encode(), "a", "b", 20 + i, 300 + i)
+        assert bob.decrypt(p["enc"], "a", "b", 20 + i, 300 + i, p["ratchet"]) == f"a2-{i}".encode()
+

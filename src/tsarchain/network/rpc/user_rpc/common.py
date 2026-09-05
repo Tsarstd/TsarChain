@@ -43,7 +43,7 @@ def verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str
         (pub_b, hashlib.sha256(payload).digest(), sig_b)
         for _, pub_b, payload, sig_b in normalized
     ]
-    results = batch_verify_der_low_s(triples, enforce_low_s=True, parallel=False)
+    results = batch_verify_der_low_s(triples, enforce_low_s=True, parallel=True)
 
     for (label, _, _, _), ok in zip(normalized, results):
         verdict[label] = bool(ok)

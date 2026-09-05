@@ -195,6 +195,9 @@ class RPC:
         self.priv = priv
         self.node: Optional[tuple[str,int]] = None
         self.lock = threading.RLock()
+        self.sock = None
+        self._sock = None
+        self._chan: Optional[SecureChannel] = None
 
         pkh = hash160(bytes.fromhex(self.pub))
         data = [0] + list(convertbits(pkh, 8, 5, True))
@@ -214,6 +217,41 @@ class RPC:
 
     def set_trusted(self, flag: bool) -> None:
         self.trusted = bool(flag)
+
+
+    def _close_channel(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except Exception:
+                pass
+        self._sock = None
+        self._chan = None
+
+
+    def disconnect(self) -> None:
+        with self.lock:
+            self._close_channel()
+            self.node = None
+
+
+    def _ensure_channel(self, timeout: float = 5.0) -> SecureChannel:
+        if self._chan is not None:
+            return self._chan
+        if not self.node:
+            raise RuntimeError("Not connected")
+        ip, port = self.node
+        sock = _connect_socket(ip, port, timeout)
+        chan = SecureChannel(
+            sock, role="client",
+            node_id=self.ctx.get("node_id"), node_pub=self.pub, node_priv=self.priv,
+            get_pinned=_get_peer_key,
+            set_pinned=_pin_peer_key,
+        )
+        chan.handshake()
+        self._sock = sock
+        self._chan = chan
+        return self._chan
 
 
     def _send(self, inner: Dict[str, Any]) -> None:
@@ -239,6 +277,7 @@ class RPC:
 
     def connect(self, ip: str, port: int, my_listen_port: int = 0) -> bool:
         with self.lock:
+            self._close_channel()
             self.node = (ip, port)
             
         hello = {
@@ -252,9 +291,12 @@ class RPC:
         }
         _ = self.call(hello, timeout=3.0)
         pong = self.call({"type":"PING"}, timeout=3.0)
-        ok = pong.get("type") == "PONG"
+        ok = pong.get("type") == "PONG" if type(pong) is dict else False
         if ok:
             log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
+        else:
+            with self.lock:
+                self._close_channel()
         return ok
 
 
@@ -263,27 +305,34 @@ class RPC:
             if not self.node:
                 raise RuntimeError("Not connected")
             ip, port = self.node
-        payload = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
-        with _connect_socket(ip, port, timeout) as s:
-            raw = None
-            chan = SecureChannel(
-                s, role="client",
-                node_id=self.ctx.get("node_id"), node_pub=self.pub, node_priv=self.priv,
-                get_pinned=_get_peer_key,
-                set_pinned=_pin_peer_key,
-            )
-            chan.handshake()
-            chan.send(json.dumps(payload).encode("utf-8"))
-            raw = chan.recv(timeout)
-            if not raw:
-                log.debug("[RPC.call] no response type=%s to %s:%s", inner.get("type"), ip, port)
-                return None
-            outer = json.loads(raw.decode("utf-8"))
-            if type(outer) is not dict:
-                return None
-            if is_envelope(outer):
-                return verify_and_unwrap(outer, lambda nid: None)
-            return outer
+
+            payload = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
+            payload_bytes = json.dumps(payload).encode("utf-8")
+
+            for attempt in range(2):
+                try:
+                    chan = self._ensure_channel(timeout)
+                    chan.send(payload_bytes)
+                    raw = chan.recv(timeout)
+                    if not raw:
+                        self._close_channel()
+                        if attempt == 1:
+                            log.debug("[RPC.call] no response type=%s to %s:%s", inner.get("type"), ip, port)
+                            return None
+                        log.debug("[RPC.call] stale channel for type=%s to %s:%s, reconnecting...", inner.get("type"), ip, port)
+                        continue
+                    outer = json.loads(raw.decode("utf-8"))
+                    if type(outer) is not dict:
+                        return None
+                    if is_envelope(outer):
+                        return verify_and_unwrap(outer, lambda nid: None)
+                    return outer
+                except Exception as exc:
+                    log.debug("[RPC.call] channel exception (%s), retrying...", exc)
+                    self._close_channel()
+                    if attempt == 1:
+                        return None
+            return None
 
 
 __all__ = ["RPC", "NodeDirectory"]

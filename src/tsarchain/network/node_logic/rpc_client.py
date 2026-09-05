@@ -127,6 +127,7 @@ def request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) 
     self._peer_last_mempool_sync[norm] = now
     self._snapshot_unreachable.discard(norm)
     if added:
+        self.broadcast.mempool.flush()
         self.reward_peer(norm, CFG.PEER_SCORE_REWARD)
     return True
 
@@ -159,6 +160,20 @@ def request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False
         self._snapshot_unreachable.add(norm)
         self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
         return None
+
+    if resp.get("type") == "MEMPOOL":
+        txs = resp.get("txs") or resp.get("data") or []
+        added = 0
+        for item in txs:
+            tx_obj = Tx.from_dict(item) if type(item) is dict else item
+            if self.broadcast.mempool.add_valid_tx(tx_obj):
+                added += 1
+        self._peer_last_mempool_sync[norm] = now
+        self._snapshot_unreachable.discard(norm)
+        if added:
+            self.broadcast.mempool.flush()
+            self.reward_peer(norm, CFG.PEER_SCORE_REWARD)
+        return True
 
     if resp.get("type") != "MEMPOOL_SYNC" or resp.get("status") == "error":
         self._snapshot_unreachable.add(norm)
@@ -219,13 +234,23 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
             set_pinned=self.set_pinned,
         )
         chan.handshake()
+        if chan.peer_node_id and self.node_id and chan.peer_node_id == self.node_id:
+            log.info("[prefetch_peer_channel] Self-connection detected (%s), removing from peers", norm)
+            self.peers.discard(norm)
+            self.persistent_peers.discard(norm)
+            sock.close()
+            return
         sock.settimeout(float(CFG.SYNC_TIMEOUT))
         with cache_lock:
             cache[norm] = {"chan": chan, "sock": sock, "ts": time.time()}
         prefetched.add(norm)
-        log.debug("[prefetch_peer_channel] warmed channel to %s", norm)
-    except Exception:
-        log.exception("[prefetch_peer_channel]")
+    except (ConnectionRefusedError, TimeoutError, OSError) as exc:
+        log.debug("[prefetch_peer_channel] Peer %s warmup deferred (%s)", norm, exc)
+        if sock:
+            sock.close()
+        return
+    except Exception as exc:
+        log.debug("[prefetch_peer_channel] Peer %s warmup skipped: %s", norm, exc)
         if sock:
             sock.close()
         return

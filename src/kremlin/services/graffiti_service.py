@@ -468,7 +468,7 @@ def upload_graffiti(
         init_payload["mroot"] = str(merkle_root).strip().lower()
         init_payload["mchunk"] = int(merkle_chunk)
         init_payload["mcount"] = int(merkle_count)
-    init_resp = _send_storage_request(host, port, init_payload, identity_hint=creator_norm)
+    init_resp = _send_storage_request(host, port, init_payload, identity_hint=creator_norm, timeout=15.0)
     if init_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "init", "resp": init_resp}
 
@@ -484,7 +484,7 @@ def upload_graffiti(
                 "graffiti_id": gid,
                 "data": base64.b64encode(buf).decode("ascii"),
             }
-            put_resp = _send_storage_request(host, port, put_payload, identity_hint=creator_norm)
+            put_resp = _send_storage_request(host, port, put_payload, identity_hint=creator_norm, timeout=120.0)
             if put_resp.get("status") not in ("ok", "accepted"):
                 return {"status": "error", "stage": "put", "resp": put_resp}
             sent += len(buf)
@@ -494,7 +494,7 @@ def upload_graffiti(
     commit_payload = {"type": "STOR_COMMIT", "graffiti_id": gid}
     if receipt_id:
         commit_payload["receipt_id"] = receipt_id
-    commit_resp = _send_storage_request(host, port, commit_payload, identity_hint=creator_norm)
+    commit_resp = _send_storage_request(host, port, commit_payload, identity_hint=creator_norm, timeout=30.0)
     if commit_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "commit", "resp": commit_resp}
 

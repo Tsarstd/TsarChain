@@ -608,4 +608,27 @@ def test_get_mempool_graffiti_count_no_broadcast(mixin):
 
 def test_get_mempool_graffiti_count_no_mempool(mixin):
     mixin.broadcast.mempool = None
-    assert mixin._get_mempool_graffiti_count() == 0
+    assert mixin._get_mempool_graffiti_count() == 0
+
+
+def test_explorer_handler_proxy_delegation():
+    from tsarchain.network.node import Network
+    from tsarchain.network.rpc_helper.history import HistoryHandler
+    from tsarchain.core.tx import TxOut, Script
+
+    net = Network.__new__(Network)
+    hist = HistoryHandler(net)
+    exp = ExplorerHandler(net)
+    net.__dict__["_handlers"] = [hist, exp]
+
+    # ExplorerHandler should resolve txout_to_address via NetworkProxy -> HistoryHandler
+    assert callable(exp.txout_to_address)
+    txout = TxOut(amount=1000, script_pubkey=Script(b"\x00\x14" + b"\x01" * 20))
+    addr = exp.txout_to_address(txout)
+    assert addr is not None
+    assert addr.startswith("tsar1")
+
+    # Non-existent attribute raises AttributeError
+    with pytest.raises(AttributeError):
+        _ = exp.non_existent_attribute
+

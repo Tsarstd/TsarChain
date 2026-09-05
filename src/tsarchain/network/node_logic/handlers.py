@@ -61,28 +61,27 @@ def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pub
     }
 
 
-@benchmark(label="handle_get_headers", threshold_ms=15.0)
+@benchmark(label="handle_get_headers", threshold_ms=50.0)
 def handle_get_headers(self, message, _):
     
     locator = message.get("locator") or []
     limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
     limit = max(1, min(limit, CFG.HEADERS_BATCH_MAX))
     with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
-    start_idx = 0
-    if locator:
-        known = {}
-        for idx, blk in enumerate(chain):
-            known[blk.hash().hex()] = idx
-
-        for cand in locator:
-            idx = known.get(str(cand))
-            if idx is not None:
-                start_idx = idx + 1
-                break
+        chain = self.broadcast.blockchain.chain
+        chain_len = len(chain)
+        start_idx = 0
+        if locator:
+            locator_set = {str(cand).strip().lower() for cand in locator if cand}
+            for idx in range(chain_len - 1, -1, -1):
+                b_hash = self.bhash_hex(chain[idx]).lower()
+                if b_hash in locator_set:
+                    start_idx = idx + 1
+                    break
+        blks = list(chain[start_idx : start_idx + limit])
 
     headers = []
-    for blk in chain[start_idx : start_idx + limit]:
+    for blk in blks:
         prev_hash = (
             blk.prev_block_hash.hex()
             if type(blk.prev_block_hash) in (bytes, bytearray)
@@ -104,17 +103,17 @@ def handle_get_headers(self, message, _):
                 "bits": b_bits,
             }
         )
-    more = (start_idx + limit) < len(chain)
+    more = (start_idx + limit) < chain_len
 
     return {
         "type": "HEADERS",
         "headers": headers,
         "more": more,
-        "best_height": max(-1, len(chain) - 1),
+        "best_height": max(-1, chain_len - 1),
     }
 
 
-@benchmark(label="handle_get_blocks", threshold_ms=15.0)
+@benchmark(label="handle_get_blocks", threshold_ms=30.0)
 def handle_get_blocks(self, message, _):
         
     heights = message.get("heights") or []
@@ -124,43 +123,47 @@ def handle_get_blocks(self, message, _):
     limit = min(len(heights), CFG.BLOCK_DOWNLOAD_BATCH_MAX)
     blocks: List[dict] = []
     with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
-
-    for raw_h in heights[:limit]:
-        h = int(raw_h)
-        if 0 <= h < len(chain):
-            blocks.append(chain[h].to_dict())
+        chain = self.broadcast.blockchain.chain
+        for raw_h in heights[:limit]:
+            h = int(raw_h)
+            if 0 <= h < len(chain):
+                blocks.append(chain[h].to_dict())
             
     return {"type": "BLOCKS", "blocks": blocks}
 
 
-@benchmark(label="handle_get_block_at", threshold_ms=15.0)
+@benchmark(label="handle_get_block_at", threshold_ms=10.0)
 def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
         
     with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
-    if height < 0 or height >= len(chain):
-        return {"type": "BLOCK", "error": "height_out_of_range"}
+        chain = self.broadcast.blockchain.chain
+        if height < 0 or height >= len(chain):
+            return {"type": "BLOCK", "error": "height_out_of_range"}
+        b = chain[height]
 
-    b = chain[height]
     d = self.serialize_block(b)
     d["type"] = "BLOCK"
     return d
 
 
-@benchmark(label="handle_get_block_by_hash", threshold_ms=15.0)
+@benchmark(label="handle_get_block_by_hash", threshold_ms=10.0)
 def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
         
     hx = (hx or "").strip().lower()
     if hx.startswith("0x"):
         hx = hx[2:]
+    target_b = None
     with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
-    for b in chain:
-        if self.bhash_hex(b).lower() == hx:
-            d = self.serialize_block(b)
-            d["type"] = "BLOCK"
-            return d
+        chain = self.broadcast.blockchain.chain
+        for b in reversed(chain):
+            if self.bhash_hex(b).lower() == hx:
+                target_b = b
+                break
+
+    if target_b is not None:
+        d = self.serialize_block(target_b)
+        d["type"] = "BLOCK"
+        return d
 
     return {"type": "BLOCK", "error": "not_found"}
 

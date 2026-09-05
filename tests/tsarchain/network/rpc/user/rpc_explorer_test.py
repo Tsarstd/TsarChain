@@ -187,6 +187,30 @@ class TestGetBalances:
         assert items["ts1spender"]["pending_outgoing"] == 0
         assert items["ts1spender"]["pending_incoming"] == 50
 
+    def test_with_confirmed_utxo_spent_in_mempool(self, mock_self, mock_pow_allow):
+        mock_tx = MagicMock()
+        mock_tx.inputs = [MagicMock()]
+        mock_tx.outputs = [MagicMock(amount=60)]
+        mock_self.broadcast.mempool.get_all_txs.return_value = [mock_tx]
+
+        mock_self.build_outpoint_map.return_value = ({}, {})
+        mock_self.txin_prevkey.return_value = "utxo_txid:0"
+        mock_self.broadcast.utxodb.utxos = {
+            "utxo_txid:0": {"tx_out": {"amount": 100, "script_pubkey": "0014sender"}}
+        }
+        mock_self.broadcast.utxodb._amount_from_tx_out.return_value = 100
+        mock_self.broadcast.utxodb._script_hex_from_tx_out.return_value = "0014sender"
+        mock_self._spkhex_to_address.return_value = "ts1sender"
+        mock_self.txout_to_address.return_value = "ts1recipient"
+        mock_self.broadcast.utxodb.get_balance.return_value = {"total": 500, "mature": 500, "immature": 0}
+
+        msg = {"addresses": ["ts1sender", "ts1recipient"]}
+        result = get_balances(mock_self, msg, None, None, client_ip="1.2.3.4")
+
+        items = result["items"]
+        assert items["ts1sender"]["pending_outgoing"] == 100
+        assert items["ts1recipient"]["pending_incoming"] == 60
+
     def test_pow_failure(self, mock_self, mock_pow_allow):
         # Override allow_rpc_with_pow to fail
         with patch("tsarchain.network.rpc.user_rpc.category.explorer.CM.allow_rpc_with_pow") as mock:

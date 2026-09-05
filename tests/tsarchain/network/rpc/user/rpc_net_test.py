@@ -312,3 +312,46 @@ def test_stor_list_with_bad_entries(mock_network, mock_cm_allow, mock_config):
     # Should not include the bad entry
     assert len(result["storers"]) == 2  # only the two valid ones
     # Ensure the bad entry didn't cause errors
+
+
+def test_stor_list_loopback_translation_for_external_client(mock_network, mock_cm_allow, mock_config):
+    """stor_list: loopback storage IP translates to NODE_PUBLIC_IP for external callers, remains 127.0.0.1 for local callers."""
+    mock_cm_allow.return_value = (True, None)
+    mock_config.NODE_PUBLIC_IP = "38.253.224.105"
+
+    mock_network.storage_peers = {
+        ("127.0.0.1", 39200): {
+            "addr": "tsar1qcolocatedstorage",
+            "url": "",
+            "ip": "127.0.0.1",
+            "port": 39200,
+            "last_seen": 3000,
+            "alive": True,
+        }
+    }
+
+    # External client (e.g. from home wifi 114.124.1.1)
+    res_external = stor_list(
+        mock_network,
+        message={},
+        pow_obj=None,
+        base_identity="ext_user",
+        client_ip="114.124.1.1",
+    )
+    assert res_external["type"] == "STOR_LIST"
+    assert len(res_external["storers"]) == 1
+    assert res_external["storers"][0]["ip"] == "38.253.224.105"
+    assert res_external["storers"][0]["port"] == 39200
+
+    # Local client (e.g. web backend on 127.0.0.1)
+    res_local = stor_list(
+        mock_network,
+        message={},
+        pow_obj=None,
+        base_identity="local_web",
+        client_ip="127.0.0.1",
+    )
+    assert res_local["type"] == "STOR_LIST"
+    assert len(res_local["storers"]) == 1
+    assert res_local["storers"][0]["ip"] == "127.0.0.1"
+    assert res_local["storers"][0]["port"] == 39200

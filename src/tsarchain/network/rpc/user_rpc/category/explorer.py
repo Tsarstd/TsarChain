@@ -15,7 +15,7 @@ from .....utils.helpers import spkhex_to_address
 from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.explorer")
 
-@benchmark(label="GET_BALANCES", threshold_ms=5.0)
+@benchmark(label="GET_BALANCES", threshold_ms=60.0)
 def get_balances(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     
@@ -44,13 +44,14 @@ def get_balances(self, message, pow_obj, base_identity, *,
         return pow_resp
 
     with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
         tip_height = int(self.broadcast.blockchain.height)
-        mem = self.broadcast.mempool.get_all_txs()
-    self.broadcast.utxodb._load()
+        mem = self.broadcast.mempool.get_all_txs() if self.broadcast.mempool else []
 
-    opmap_chain, opmap_mem = self.build_outpoint_map(chain, mem)
-    pending_out_map, incoming_map = _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain)
+    if mem:
+        opmap_chain, opmap_mem = self.build_outpoint_map([], mem)
+        pending_out_map, incoming_map = _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain)
+    else:
+        pending_out_map, incoming_map = {}, {}
 
     items = {}
     for addr_str in addrs:
@@ -74,7 +75,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
     return response_dict
 
 
-@benchmark(label="GET_NETWORK_INFO", threshold_ms=15.0)
+@benchmark(label="GET_NETWORK_INFO", threshold_ms=10.0)
 def get_network_info(self, message, pow_obj, base_identity, *,
                      client_ip, overlay_realtime_mempool_stats, **kwargs):
 
@@ -109,6 +110,7 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     return response_dict
 
 
+@benchmark(label="GET_BLOCK", threshold_ms=15.0)
 def get_block(self, message, pow_obj, base_identity,*,
                      client_ip, **kwargs):
     
@@ -140,7 +142,7 @@ def get_block(self, message, pow_obj, base_identity,*,
     return handlers.handle_get_block_by_hash(self, hx, src_tag=src_tag)
 
 
-@benchmark(label="GET_BLOCK_RANGE", threshold_ms=15.0)
+@benchmark(label="GET_BLOCK_RANGE", threshold_ms=25.0)
 def get_block_range(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
 
@@ -167,7 +169,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
     limit = max(1, min(limit, 500))
 
     with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
+        chain = self.broadcast.blockchain.chain
         tip_height = int(self.broadcast.blockchain.height)
 
     if not chain:
@@ -224,7 +226,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
     return response_dict
 
 
-@benchmark(label="GET_MEMPOOL", threshold_ms=35.0)
+@benchmark(label="GET_MEMPOOL", threshold_ms=10.0)
 def get_mempool(self, message, pow_obj, base_identity, addr, *,
                      client_ip, is_miner_sender, **kwargs):
     
@@ -281,7 +283,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
     return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
 
-@benchmark(label="GET_TX_HISTORY", threshold_ms=35.0)
+@benchmark(label="GET_TX_HISTORY", threshold_ms=40.0)
 def get_tx_history(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     
@@ -318,6 +320,7 @@ def get_tx_history(self, message, pow_obj, base_identity, *,
     return response_dict
 
 
+@benchmark(label="GET_TX_DETAIL", threshold_ms=50.0)
 def get_tx_detail(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs): 
     
@@ -400,6 +403,7 @@ def _validate_balances_request(addrs_raw) -> tuple[list[str], dict | None]:
 def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict[str, int], dict[str, int]]:
     pending_out_map: dict[str, int] = {}
     incoming_map: dict[str, int] = {}
+    utxodb = self.broadcast.utxodb if self.broadcast else None
     for tx in mem or []:
         spent_local: dict[str, int] = {}
         recv_local: dict[str, int] = {}
@@ -408,6 +412,14 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
         for tin in inputs:
             key = self.txin_prevkey(tin)
             amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
+            if not amt_spk and utxodb and type(utxodb.utxos) is dict:
+                with utxodb._lock:
+                    entry = utxodb.utxos.get(key)
+                if type(entry) is dict:
+                    tx_out = entry.get("tx_out")
+                    amt = utxodb._amount_from_tx_out(tx_out)
+                    spk_hex = utxodb._script_hex_from_tx_out(tx_out) or ""
+                    amt_spk = (amt, spk_hex)
             if not amt_spk:
                 continue
             amt, spk_hex = amt_spk

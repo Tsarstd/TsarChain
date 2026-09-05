@@ -13,7 +13,8 @@ from tsarchain.utils import config as CFG
 @pytest.fixture
 def mock_kv():
     with patch("tsarchain.contracts.graffiti_registry.iter_prefix") as m_iter, \
-         patch("tsarchain.contracts.graffiti_registry.batch") as m_batch:
+         patch("tsarchain.contracts.graffiti_registry.batch") as m_batch, \
+         patch("tsarchain.contracts.graffiti_registry.put") as m_put:
         yield m_iter, m_batch
 
 def test_init_kv_empty(mock_kv):
@@ -305,11 +306,6 @@ def test_binary_serde_helpers():
     assert deser_post["title"] == "graffiti_test"
     assert deser_post["stats"]["pool_balance"] == 5000
 
-    # Post JSON fallback (starts with { or short raw)
-    raw_json_post = json.dumps(post_entry).encode("utf-8")
-    assert deserialize_post_binary(raw_json_post)["art_id"] == "art_serde"
-    assert deserialize_post_binary(b"short") == json.loads(b"short".decode("utf-8", errors="ignore")) if False else True
-
     # Comment
     comment_entry = {
         "txid": "tx_c1",
@@ -325,9 +321,6 @@ def test_binary_serde_helpers():
     deser_comment = deserialize_comment_binary(raw_comment)
     assert deser_comment["txid"] == "tx_c1"
     assert deser_comment["comment"] == "Nice!"
-    # JSON fallback
-    raw_json_comment = json.dumps(comment_entry).encode("utf-8")
-    assert deserialize_comment_binary(raw_json_comment)["txid"] == "tx_c1"
 
     # Payout
     payout_entry = {
@@ -341,9 +334,6 @@ def test_binary_serde_helpers():
     assert deser_payout["txid"] == "tx_p1"
     assert deser_payout["amount"] == 800
     assert deser_payout["epoch"] == 3
-    # JSON fallback
-    raw_json_payout = json.dumps(payout_entry).encode("utf-8")
-    assert deserialize_payout_binary(raw_json_payout)["txid"] == "tx_p1"
 
     # Proof
     proof_entry = {
@@ -360,9 +350,31 @@ def test_binary_serde_helpers():
     assert deser_proof["storer"] == "storer_1"
     assert deser_proof["epoch"] == 4
     assert deser_proof["hash"] == "proof_hash"
-    # JSON fallback
-    raw_json_proof = json.dumps(proof_entry).encode("utf-8")
-    assert deserialize_proof_binary(raw_json_proof)["storer"] == "storer_1"
+
+    # Edge cases: First byte evaluates to ord('{') == 0x7b == 123
+    # 1. Proof with epoch = 123
+    proof_123 = dict(proof_entry, epoch=123)
+    raw_123 = serialize_proof_binary(proof_123)
+    assert raw_123.startswith(b"{")
+    assert deserialize_proof_binary(raw_123)["epoch"] == 123
+
+    # 2. Comment with height = 123
+    comment_123 = dict(comment_entry, block_height=123)
+    raw_comment_123 = serialize_comment_binary(comment_123)
+    assert raw_comment_123.startswith(b"{")
+    assert deserialize_comment_binary(raw_comment_123)["block_height"] == 123
+
+    # 3. Payout with height = 123
+    payout_123 = dict(payout_entry, block_height=123)
+    raw_payout_123 = serialize_payout_binary(payout_123)
+    assert raw_payout_123.startswith(b"{")
+    assert deserialize_payout_binary(raw_payout_123)["block_height"] == 123
+
+    # 4. Post with amount_paid = 123
+    post_123 = dict(post_entry, amount_paid=123)
+    raw_post_123 = serialize_post_binary(post_123)
+    assert raw_post_123.startswith(b"{")
+    assert deserialize_post_binary(raw_post_123)["amount_paid"] == 123
 
 
 def test_graffiti_registry_stale_key_cleanup_on_flush(mock_kv):
