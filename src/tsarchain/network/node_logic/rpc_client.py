@@ -234,6 +234,12 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
             set_pinned=self.set_pinned,
         )
         chan.handshake()
+        if chan.peer_node_id and self.node_id and chan.peer_node_id == self.node_id:
+            log.info("[prefetch_peer_channel] Self-connection detected (%s), removing from peers", norm)
+            self.peers.discard(norm)
+            self.persistent_peers.discard(norm)
+            sock.close()
+            return
         sock.settimeout(float(CFG.SYNC_TIMEOUT))
         with cache_lock:
             cache[norm] = {"chan": chan, "sock": sock, "ts": time.time()}

@@ -421,22 +421,22 @@ MAX_UTXO_ADDR_LEN              = 64  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
 
-HANDSHAKE_RL_PER_IP_BURST      = 100  # burst limit when rate-limiting handshakes
+HANDSHAKE_RL_PER_IP_BURST      = 250  # burst limit when rate-limiting handshakes
 HANDSHAKE_RL_PER_IP_WINDOW_S   = 10   # time window for handshake rate limit
-HANDSHAKE_RL_PER_NODE_BURST    = 150  # burst limit per node_id to avoid CGNAT false positives
+HANDSHAKE_RL_PER_NODE_BURST    = 200  # burst limit per node_id to avoid CGNAT false positives
 
 HANDSHAKE_RL_PER_NODE_WINDOW_S = 10   # time window for per-node limiter
-HANDSHAKE_RL_SUBNET_BURST      = 200  # burst cap per /24
+HANDSHAKE_RL_SUBNET_BURST      = 400  # burst cap per /24
 HANDSHAKE_RL_SUBNET_WINDOW_S   = 15   # subnet limiter window (seconds)
 
-CGNAT_IP_BURST_MULT            = 3    # multiplier to loosen per-IP limits when identity is present
-TEMP_BAN_SECONDS               = 30   # duration for temporary ban entries
+CGNAT_IP_BURST_MULT            = 6    # multiplier to loosen per-IP limits when identity is present
+TEMP_BAN_SECONDS               = 10   # duration for temporary ban entries
 BAN_MALICIOUS_RPC              = 180  # temp ban duration when receiving unregistered RPC types
 
 POW_TOKEN_TTL_S                = 120  # default TTL for PoW challenge/cookie
 RPC_POW_DIFFICULTY_TX          = 16  # difficulty bits for TX submit / wallet-heavy RPC
 RPC_POW_DIFFICULTY_READ        = 12  # difficulty bits for read-only RPC (info/history/graffiti)
-RPC_POW_DIFFICULTY_CHAT        = 14  # difficulty bits for chat presence/send/lookup
+RPC_POW_DIFFICULTY_CHAT        = 8  # difficulty bits for chat presence/send/lookup
 
 
 # ---- PAYLOAD BOUNDS & MEMPOOL SYNC ----
@@ -504,30 +504,30 @@ CHAT_SPK              = b"TSAR-SPK|"
 
 
 # ---- CHAT PAYLOAD LIMITS ----
-CHAT_MAX_CT_BYTES     = 2 * 1024  # ciphertext size cap per chat message
-CHAT_TS_DRIFT_S       = 120  # tolerated timestamp drift for chat payloads
-CHAT_TTL_S            = 86400  # chat retention window (seconds)
-CHAT_MAILBOX_MAX      = 250  # messages kept per recipient mailbox
-CHAT_GLOBAL_QUEUE_MAX = 20_000  # max pending chat messages globally
+CHAT_MAX_CT_BYTES     = 8 * 1024  # ciphertext size cap per chat message
+CHAT_TS_DRIFT_S       = 600  # tolerated timestamp drift for chat payloads
+CHAT_TTL_S            = 2 * 86400  # chat retention window (seconds)
+CHAT_MAILBOX_MAX      = 1000  # messages kept per recipient mailbox
+CHAT_GLOBAL_QUEUE_MAX = 50_000  # max pending chat messages globally
 CHAT_PULL_MAX_ITEMS   = 50  # entries returned per chat pull request
 
 
 # ---- CHAT POLLING ----
 CHAT_POLL_INTERVAL_MS       = 3000  # default polling interval for chat client
 CHAT_POLL_INITIAL_MS        = 4000  # initial backoff before first poll
-CHAT_PUBLISH_MIN_INTERVAL_S = 10  # throttle between chat publish attempts
+CHAT_PUBLISH_MIN_INTERVAL_S = 5  # throttle between chat publish attempts
 
 
 # ---- CHAT RATE LIMITS ----
-CHAT_RL_ADDR_BURST   = 25  # per-address burst allowance for chat msgs
+CHAT_RL_ADDR_BURST   = 60  # per-address burst allowance for chat msgs
 CHAT_RL_ADDR_WINDOWS = 10  # seconds over which per-address burst is evaluated
-CHAT_RL_IP_BURST     = 50  # per-IP burst allowance for chat msgs
+CHAT_RL_IP_BURST     = 150  # per-IP burst allowance for chat msgs
 CHAT_RL_IP_WINDOWS   = 10  # seconds over which per-IP burst is evaluated
-CHAT_BACKOFF_S       = 13  # seconds to wait after rate limiter trips
+CHAT_BACKOFF_S       = 3  # seconds to wait after rate limiter trips
 
 
 # ---- PRESENCE RELAY ----
-PRESENCE_RL_ADDR_BURST   = 2  # per-address burst allowance for presence relays
+PRESENCE_RL_ADDR_BURST   = 10  # per-address burst allowance for presence relays
 PRESENCE_RL_ADDR_WINDOWS = 10  # seconds window for presence addr limiter
 PRESENCE_MAX_HOPS        = 3  # maximum hops for relayed presence updates
 PRESENCE_TTL_S           = 3600  # lifespan of presence announcements
@@ -606,18 +606,20 @@ MEMPOOL_INLINE_RL_BACKOFF  = 10  # seconds to wait after hitting inline limiter
 CHAT_REG_RL_IP_BURST       = 15   # chat register/prekey submissions allowed per IP
 CHAT_REG_RL_WINDOW_S       = 30  # seconds window for chat register limiter
 CHAT_REG_RL_BACKOFF_S      = 5  # cooldown after chat register limiter trips
+
 CHAT_REG_RL_ADDR_BURST     = 10   # chat register limiter per address
 CHAT_REG_RL_ADDR_WINDOW_S  = 30  # seconds window for chat register per-address limiter
 CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limiter trips
 
 
 # ---- CHAT LOOKUP THROTTLING ----
-CHAT_LOOKUP_RL_IP_BURST       = 20   # lookup pubkey chat per IP
+CHAT_LOOKUP_RL_IP_BURST       = 80   # lookup pubkey chat per IP
 CHAT_LOOKUP_RL_IP_WINDOW_S    = 10   # seconds window for pubkey lookup limiter
-CHAT_LOOKUP_RL_BACKOFF_S      = 5    # backoff after pubkey lookup limiter is triggered
-CHAT_LOOKUP_RL_ADDR_BURST     = 10   # pubkey lookup limiter per address
+CHAT_LOOKUP_RL_BACKOFF_S      = 2    # backoff after pubkey lookup limiter is triggered
+
+CHAT_LOOKUP_RL_ADDR_BURST     = 30   # pubkey lookup limiter per address
 CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10   # seconds window for per-address pubkey lookup limiter
-CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8    # backoff after per-address pubkey lookup limiter is triggered
+CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 3    # backoff after per-address pubkey lookup limiter is triggered
 
 
 # ---- USER RPC THROTTLING ----
@@ -634,6 +636,7 @@ BLOCK_RANGE_RL_BACKOFF_S   = 3   # backoff after block fetch limiter trips
 TX_SUBMIT_RL_IP_BURST       = 12  # NEW_TX submissions allowed per IP before throttling
 TX_SUBMIT_RL_WINDOW_S       = 6   # seconds window for tx submit limiter
 TX_SUBMIT_RL_BACKOFF_S      = 6   # backoff after tx submit limiter trips
+
 TX_SUBMIT_RL_ADDR_BURST     = 10  # per-address tx submit limiter
 TX_SUBMIT_RL_ADDR_WINDOW_S  = 10  # seconds window for per-address limiter
 TX_SUBMIT_RL_ADDR_BACKOFF_S = 8  # backoff after per-address limiter trips
@@ -764,7 +767,7 @@ DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/p
 # ---- MODE PROFILES ----
 if IS_DEV:
     # ---- DEV PROFILE ----
-    LOG_LEVEL                   = "DEBUG"  # balanced verbosity for development
+    LOG_LEVEL                   = "INFO"  # balanced verbosity for development
     LOG_FORMAT                  = "plain"  # plain text logs ease local debugging
     LOG_TO_CONSOLE              = False  # mirror logs to stdout for dev loops
     LOG_RATE_LIMIT_SECONDS      = 0.0  # disable console throttling in dev

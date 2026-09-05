@@ -41,10 +41,12 @@ log = get_ctx_logger("tsarchain.network.node")
 
 
 class NetworkProxy:
+    _tls = threading.local()
+
     def __getattr__(self, name):
-        if self.__dict__.get('_in_getattr', False):
+        if self._tls.__dict__.get("in_getattr", False):
             raise AttributeError(name)
-        self._in_getattr = True
+        self._tls.in_getattr = True
         try:
             if '_handlers' not in self.__dict__:
                 self.chat_handler = ChatHandler(self)
@@ -65,12 +67,10 @@ class NetworkProxy:
                 return self.__dict__[name]
 
             for handler in self._handlers:
-                try:
+                if name in handler.__dict__ or name in handler.__class__.__dict__:
                     return handler.__getattribute__(name)
-                except AttributeError:
-                    pass
         finally:
-            self._in_getattr = False
+            self._tls.in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 class Network(NetworkProxy):
@@ -317,11 +317,14 @@ class Network(NetworkProxy):
         if not target_ips:
             return False
 
-        local_ips: set[str] = {"127.0.0.1", "::1", "0.0.0.0", "::"}
-        hn = socket.gethostname()
-        local_ips.update(socket.gethostbyname_ex(hn)[2])
-        fqdn = socket.getfqdn()
-        local_ips.update(socket.gethostbyname_ex(fqdn)[2])
+        local_ips: set[str] = {"127.0.0.1", "127.0.1.1", "::1", "0.0.0.0", "::"}
+        try:
+            hn = socket.gethostname()
+            local_ips.update(socket.gethostbyname_ex(hn)[2])
+            fqdn = socket.getfqdn()
+            local_ips.update(socket.gethostbyname_ex(fqdn)[2])
+        except Exception:
+            pass
 
         try:
             for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
@@ -330,6 +333,15 @@ class Network(NetworkProxy):
                     if ip.startswith("::ffff:"):
                         ip = ip[7:]
                     local_ips.add(ip)
+        except Exception:
+            pass
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                outbound_ip = s.getsockname()[0]
+                if outbound_ip:
+                    local_ips.add(outbound_ip)
         except Exception:
             pass
 

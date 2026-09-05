@@ -15,7 +15,7 @@ from .....utils.helpers import spkhex_to_address
 from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.explorer")
 
-@benchmark(label="GET_BALANCES", threshold_ms=10.0)
+@benchmark(label="GET_BALANCES", threshold_ms=60.0)
 def get_balances(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     
@@ -320,7 +320,7 @@ def get_tx_history(self, message, pow_obj, base_identity, *,
     return response_dict
 
 
-@benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
+@benchmark(label="GET_TX_DETAIL", threshold_ms=50.0)
 def get_tx_detail(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs): 
     

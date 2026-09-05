@@ -368,39 +368,26 @@ def chat_send(self, message, pow_obj, base_identity, *,
         log.warning("[chat_send] Field validation failed from %s (ip=%s): %s", frm, client_ip, err)
         return err
 
-    ok, pow_resp = CM.allow_rpc_with_pow(
-        self,
-        scope="rpc:chat_send",
-        table=self.rl_ip,
-        ip=client_ip,
-        identity=frm or base_identity,
-        key_label="chat_send",
-        burst=CFG.CHAT_RL_IP_BURST,
-        window_s=CFG.CHAT_RL_IP_WINDOWS,
-        backoff_s=CFG.CHAT_BACKOFF_S,
-        pow_obj=pow_obj,
-        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
-    )
-    if not ok:
-        log.warning("[chat_send] IP rate limit/PoW failed for %s from %s", frm, client_ip)
-        return {"type": "CHAT_ACK", **(pow_resp or {})}
-
-    ok, pow_resp = CM.allow_rpc_with_pow(
-        self,
-        scope="rpc:chat_send_addr",
-        table=self.rl_addr,
-        ip=client_ip,
-        identity=frm or base_identity,
-        key_label=f"chat_send:{frm}",
-        burst=CFG.CHAT_RL_ADDR_BURST,
-        window_s=CFG.CHAT_RL_ADDR_WINDOWS,
-        backoff_s=CFG.CHAT_BACKOFF_S,
-        pow_obj=pow_obj,
-        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
-    )
-    if not ok:
-        log.warning("[chat_send] Addr rate limit/PoW failed for %s", frm)
-        return {"type": "CHAT_ACK", **(pow_resp or {})}
+    for scope, table, key_label, burst, window_s in [
+        ("rpc:chat_send", self.rl_ip, "chat_send", CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS),
+        ("rpc:chat_send_addr", self.rl_addr, f"chat_send:{frm}", CFG.CHAT_RL_ADDR_BURST, CFG.CHAT_RL_ADDR_WINDOWS),
+    ]:
+        ok, pow_resp = CM.allow_rpc_with_pow(
+            self,
+            scope=scope,
+            table=table,
+            ip=client_ip,
+            identity=frm or base_identity,
+            key_label=key_label,
+            burst=burst,
+            window_s=window_s,
+            backoff_s=CFG.CHAT_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            log.warning("[chat_send] %s rate limit/PoW failed for %s", key_label, frm or client_ip)
+            return {"type": "CHAT_ACK", **(pow_resp or {})}
 
     if self.dedup_mid(frm, mid):
         return {"type": "CHAT_ACK", "status": "duplicate"}
@@ -425,7 +412,8 @@ def chat_send(self, message, pow_obj, base_identity, *,
         log.warning("[chat_send] Missing spend_pub for sender %s", frm)
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
     
-    used_opk_hex = (message.get("used_opk") or "").strip().lower()
+    used_opk = message.get("used_opk")
+    used_opk_hex = (used_opk or "").strip().lower()
     chat_bytes = b"|".join([
         b"CHAT_SEND",
         frm.encode(), to.encode(),
@@ -440,6 +428,18 @@ def chat_send(self, message, pow_obj, base_identity, *,
         log.warning("[chat_send] Bad chat_sig from %s (ip=%s)", frm, client_ip)
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
 
+    msg_payload = {
+        "from": frm,
+        "msg_id": mid,
+        "ts": ts,
+        "from_static": fs_hex,
+        "from_pub": fp_hex,
+        "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
+        "used_opk": used_opk,
+        "ratchet_pn": ratchet_pn,
+        "ratchet_n": ratchet_n,
+    }
+
     # === Onion-lite relay (opsional) ===
     relay_hops = int(CFG.CHAT_NUM_HOPS)
     if CFG.CHAT_FORCE_RELAY and len(self.peers) >= max(1, relay_hops):
@@ -447,37 +447,11 @@ def chat_send(self, message, pow_obj, base_identity, *,
         if not route:
             log.warning("[chat_send] CHAT_SEND relay requested but no peers available; falling back to direct queue")
         else:
-            inner = {
-                "type": "CHAT_SEND_INNER",
-                "to": to,
-                "msg": {
-                    "from": frm,
-                    "msg_id": mid,
-                    "ts": ts,
-                    "from_static": fs_hex,
-                    "from_pub": (message.get("from_pub") or "").strip().lower(),
-                    "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
-                    "used_opk": message.get("used_opk"),
-                    "ratchet_pn": ratchet_pn,
-                    "ratchet_n": ratchet_n,
-                },
-            }
-            relay_chain(self, route, inner)
+            relay_chain(self, route, {"type": "CHAT_SEND_INNER", "to": to, "msg": msg_payload})
             return {"type": "CHAT_ACK", "status": "relayed", "hops": len(route)}
 
-    ok = self.mailbox_put(to, {
-        "type": "CHAT_ITEM",
-        "from": frm,
-        "to": to,
-        "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
-        "from_pub": (message.get("from_pub") or "").strip().lower(),
-        "from_static": fs_hex,
-        "used_opk": message.get("used_opk"),
-        "ratchet_pn": ratchet_pn,
-        "ratchet_n": ratchet_n,
-        "msg_id": mid,
-        "ts": ts,
-    }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
+    ok = self.mailbox_put(to, {"type": "CHAT_ITEM", "to": to, **msg_payload},
+                          CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
 
     if not ok:
         log.warning("[chat_send] Mailbox full for %s (dropped mid=%s)", to, mid)
@@ -665,8 +639,6 @@ def _validate_send_encryption(self, frm, ct_hex, nonce_hex, fp_hex, fs_hex) -> d
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
     if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
-    if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
     return None
 
 

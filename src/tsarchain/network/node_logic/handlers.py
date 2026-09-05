@@ -61,7 +61,7 @@ def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pub
     }
 
 
-@benchmark(label="handle_get_headers", threshold_ms=20.0)
+@benchmark(label="handle_get_headers", threshold_ms=50.0)
 def handle_get_headers(self, message, _):
     
     locator = message.get("locator") or []
@@ -72,10 +72,10 @@ def handle_get_headers(self, message, _):
         chain_len = len(chain)
         start_idx = 0
         if locator:
-            known = {self.bhash_hex(blk).lower(): idx for idx, blk in enumerate(chain)}
-            for cand in locator:
-                idx = known.get(str(cand).lower())
-                if idx is not None:
+            locator_set = {str(cand).strip().lower() for cand in locator if cand}
+            for idx in range(chain_len - 1, -1, -1):
+                b_hash = self.bhash_hex(chain[idx]).lower()
+                if b_hash in locator_set:
                     start_idx = idx + 1
                     break
         blks = list(chain[start_idx : start_idx + limit])

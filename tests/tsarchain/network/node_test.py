@@ -274,3 +274,31 @@ def test_network_handler_proxy_delegation(mock_cfg, mock_socket, mock_broadcast,
     with pytest.raises(AttributeError):
         _ = net.chat_handler.non_existent_attr_123
 
+
+def test_network_proxy_concurrent_access(mock_cfg, mock_socket, mock_broadcast, mock_deps):
+    import threading
+
+    Network.active_ports.clear()
+    net = Network()
+    net.rl_ip = {}
+
+    errors = []
+
+    def _worker(thread_idx):
+        try:
+            for _ in range(50):
+                allowed = net.tb_node_allow(net.rl_ip, f"test_key_{thread_idx}", 100, 60, 100)
+                assert type(allowed) is bool
+                assert callable(net.get_prekey_bundle)
+                assert callable(net.backoff_node)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_worker, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=2.0)
+
+    assert len(errors) == 0, f"Concurrent proxy access raised errors: {errors}"
+

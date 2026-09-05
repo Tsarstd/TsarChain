@@ -173,6 +173,37 @@ def test_handle_get_headers_no_locator(mock_cfg, mock_node):
     assert res["more"] is True
 
 
+@patch("tsarchain.network.node_logic.handlers.CFG")
+def test_handle_get_headers_large_chain_performance(mock_cfg, mock_node):
+    import time
+
+    mock_cfg.HEADERS_BATCH_MAX = 50
+    mock_cfg.DEBUG_BENCHMARKS = False
+
+    mock_blocks = [
+        MagicMock(
+            height=i,
+            hash=MagicMock(return_value=f"hash{i}".encode("utf-8")),
+            prev_block_hash=f"prev{i}".encode("utf-8"),
+            timestamp=1000 + i,
+            bits=0x1D00FFFF,
+        )
+        for i in range(5000)
+    ]
+    mock_node.broadcast.blockchain.chain = mock_blocks
+    mock_node.bhash_hex = lambda b: b.hash().decode("utf-8")
+
+    msg = {"locator": ["hash4998", "hash4990"]}
+    start = time.perf_counter()
+    res = handle_get_headers(mock_node, msg, ("192.168.1.10", 8334))
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+
+    assert res["type"] == "HEADERS"
+    assert len(res["headers"]) == 1
+    assert res["headers"][0]["hash"] == "hash4999".encode("utf-8").hex()
+    assert elapsed_ms < 10.0
+
+
 # -------------------------------------------------------------------
 # handle_get_blocks tests
 # -------------------------------------------------------------------

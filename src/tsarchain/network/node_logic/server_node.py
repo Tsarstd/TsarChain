@@ -91,6 +91,9 @@ def _handle_connection(self, conn, addr):
         if type(first) is dict:
             node_hint = str(first.get("from") or first.get("node_id") or "").strip().lower() or None
             pow_proof = first.get("pow")
+        if node_hint and self.node_id and node_hint == str(self.node_id).strip().lower():
+            log.debug("[_handle_connection] dropping connection to self node_id=%s", node_hint)
+            return
         if not allow_handshake(ip, time.time(), node_id=node_hint, pow_proof=pow_proof):
             log.warning("[_handle_connection] handshake denied ip=%s node=%s", ip, (node_hint or "-"))
             return
