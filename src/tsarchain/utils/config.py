@@ -382,7 +382,7 @@ STORAGE_PORT_RANGE_DEV  = (39200, 39209)
 STORAGE_PORT_RANGE_PROD = (41200, 41209)
 
 BOOTSTRAP_DEV = (
-    ("127.0.0.1", 38169),
+    ("38.253.224.105", 38169),
 ) # loopback bootstrap peers for development
 
 BOOTSTRAP_PROD = (
