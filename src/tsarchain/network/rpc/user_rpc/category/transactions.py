@@ -65,6 +65,7 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
         return {"status": "ok", "txid": txid}
     else:
         reason = self.broadcast.mempool.last_error_reason
+        log.warning("[new_tx] Transaction rejected by mempool for %s: %s", sender_addr or "unknown", reason)
         return {"status": "error", "reason": (reason or "invalid tx")}
 
 
@@ -95,6 +96,7 @@ def create_tx(self, message, pow_obj, base_identity, addr, mtype, *,
     try:
         tpl = self.create_template_tx(from_addr, to_addr, amount, fee_rate)
     except Exception as exc:
+        log.warning("[create_tx] Template rejected for %s: %s", from_addr, exc)
         return {"error": str(exc) or "create_tx_failed"}
     
     return {"type": "TX_TEMPLATE", "data": tpl}
@@ -129,6 +131,7 @@ def create_tx_multi(self, message, pow_obj, base_identity, addr, mtype, *,
     try:
         tpl = self.create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs)
     except Exception as exc:
+        log.warning("[create_tx_multi] Template rejected for %s: %s", from_addr, exc)
         return {"error": str(exc) or "create_tx_multi_failed"}
     
     return {"type": "TX_TEMPLATE", "data": tpl}
