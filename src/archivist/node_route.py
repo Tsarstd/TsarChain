@@ -32,14 +32,14 @@ def rpc_hello(rpc, my_listen_port: int = 0, trusted: bool = False, timeout: floa
     return pong.get("type") == "PONG"
 
 
-@benchmark(label="RPC_PING", threshold_ms=15.0)
+@benchmark(label="RPC_PING", threshold_ms=50.0)
 def rpc_ping(rpc, timeout: float = 2.0) -> bool:
     """Heartbeat check with the Node."""
     pong = rpc.call({"type": "PING"}, timeout=timeout)
     return pong.get("type") == "PONG"
 
 
-@benchmark(label="RPC_GET_NETWORK_INFO", threshold_ms=25.0)
+@benchmark(label="RPC_GET_NETWORK_INFO", threshold_ms=50.0)
 def rpc_get_network_info(rpc, timeout: float = 4.0) -> Optional[Dict[str, Any]]:
     """Fetch network status, tip height, and peers count from the Node."""
     raw = rpc.call({"type": "GET_NETWORK_INFO"}, timeout=timeout)

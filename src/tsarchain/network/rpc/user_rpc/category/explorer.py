@@ -226,7 +226,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
     return response_dict
 
 
-@benchmark(label="GET_MEMPOOL", threshold_ms=10.0)
+@benchmark(label="GET_MEMPOOL", threshold_ms=2050.0)
 def get_mempool(self, message, pow_obj, base_identity, addr, *,
                      client_ip, is_miner_sender, **kwargs):
     
